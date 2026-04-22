@@ -1,0 +1,75 @@
+# ─────────────────────────────────────────────────────────────────
+# Configurare laboratoare — un bloc pe fiecare fisier Excel din data-source/
+#
+# Cum functioneaza:
+#  • Numele fisierului (fara .xlsx) trebuie sa coincida cu cheia "file:".
+#  • "lab_name" = numele afisat in site (ex. "Clinica Sante", "Binisan").
+#  • "sheet" = numele tab-ului din Excel (sau index 0/1/2...). Daca
+#    are mai multe tab-uri, le poti lista in "sheets:" si toate vor fi unite.
+#  • "header_row" = pe ce rand sunt capetele de coloana (1-indexed).
+#  • "columns": numele coloanelor (asa cum apar in header) -> rolul lor.
+#       Roluri suportate: "denumire" (obligatoriu), "pret" (obligatoriu),
+#                          "categorie" (opțional), "timp" (opțional).
+#
+# Daca adaugi un fisier Excel NOU in data-source/ si nu il pui in config,
+# scriptul incearca auto-detectie. Daca esueaza, cauta in console mesajele
+# de eroare si adauga un bloc aici.
+# ─────────────────────────────────────────────────────────────────
+
+labs:
+  - file: Sante
+    lab_name: Clinica Sante
+    sheet: Servicii
+    header_row: 4
+    columns:
+      Denumire: denumire
+      Categorie: categorie
+      Termen de executie: timp
+      Pret: pret
+
+  - file: Binisan
+    lab_name: Binisan
+    sheet: 0   # primul (si singurul) sheet
+    header_row: 5
+    # Coloanele Binisan au denumiri ciudate; folosim pozitii (1-indexed)
+    columns_by_position:
+      2: denumire   # col B = "Denumire serviciu"
+      4: pret       # col D = "Pret"
+
+  - file: Derzelius
+    lab_name: Derzelius
+    sheet: 0
+    header_row: 1
+    columns:
+      DENUMIRE ANALIZĂ: denumire
+      PREȚ (RON): pret
+
+  - file: Medilab
+    lab_name: Medilab
+    # Medilab are 2 tab-uri ce trebuie unite
+    sheets:
+      - analize cu disc variabil
+      - Analize disc 5%
+    header_row: 1
+    columns:
+      Analiza: denumire
+      "Pret  Medilab 2026": pret   # atentie: 2 spatii intre Pret si Medilab
+
+  - file: Poliana
+    lab_name: Poliana
+    sheet: Sheet1
+    header_row: 3
+    # Poliana: header pe rand 3, OFERTA PRET pe col 7 (G), Timp pe col 8, Subgrup pe col 5
+    columns_by_position:
+      2: denumire    # col B = Denumire
+      5: categorie   # col E = Subgrup
+      7: pret        # col G = OFERTA PRET (pretul cu reducere)
+      8: timp        # col H = Timp executie (zile)
+
+  - file: Solomed
+    lab_name: Solomed
+    sheet: Sheet1
+    header_row: 4
+    columns_by_position:
+      2: denumire    # col B = denumire (cu prefix ^^ ce se elimina automat)
+      3: pret        # col C = pret

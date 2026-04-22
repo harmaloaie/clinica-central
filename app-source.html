@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clinica Central — Aplicatie analize</title>
+<link rel="icon" type="image/jpeg" href="assets/img/logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="topbar-brand">
+      <img class="topbar-logo" src="assets/img/logo.jpg" alt="Clinica Central">
+      <div class="topbar-title">
+        <span class="topbar-label">Clinica Central &bull; Pitesti</span>
+        <h1>Clinica <em>Central</em></h1>
+      </div>
+    </div>
+    <nav class="topbar-tabs" role="tablist">
+      <button class="topbar-tab active" data-view="cart" role="tab" aria-selected="true">Cerere analize</button>
+      <button class="topbar-tab" data-view="browse" role="tab" aria-selected="false">Explorator preturi</button>
+    </nav>
+  </div>
+</header>
+
+<!-- ═════════════════════════════════════════════════════════════ -->
+<!-- VIEW 1: CART — default -->
+<!-- ═════════════════════════════════════════════════════════════ -->
+<div class="view" id="viewCart">
+  <main class="cart-main">
+    <section class="cart-pane-left">
+      <div class="pane-label">Pasul 1</div>
+      <h2 class="pane-title">Cauta si adauga</h2>
+      <p class="pane-sub">Introdu CNP-ul pacientului, apoi cauta analizele. Alegem automat cea mai ieftina varianta din cele 6 laboratoare.</p>
+
+      <div class="cnp-area">
+        <label class="cnp-label" for="cnpInput">
+          CNP pacient <span class="required">*obligatoriu</span>
+        </label>
+        <div class="cnp-wrap">
+          <input type="text" class="cnp-box" id="cnpInput" placeholder="1234567890123" autocomplete="off" spellcheck="false" inputmode="numeric" maxlength="13">
+          <span class="cnp-status" id="cnpStatus"></span>
+        </div>
+        <div class="cnp-error" id="cnpError"></div>
+      </div>
+
+      <div class="search-area">
+        <span class="search-icon">&#9906;</span>
+        <input type="text" class="search-box" id="cartSearchInput" placeholder="Introdu CNP-ul mai intai..." autocomplete="off" spellcheck="false" disabled>
+        <div class="suggestions" id="cartSuggestions"></div>
+      </div>
+
+      <div class="empty-hint" id="cartEmptyHint">
+        <h3>Incepe sa tastezi</h3>
+        <p>Scrie minim 2 caractere pentru a vedea sugestii.</p>
+      </div>
+    </section>
+
+    <aside class="cart-pane-right">
+      <div class="cart-header">
+        <div class="cart-label">Pasul 2</div>
+        <div class="cart-title">Cerere analize <span class="cart-count" id="cartCount">0</span></div>
+      </div>
+
+      <div class="cart-list" id="cartList">
+        <div class="cart-empty" id="cartEmpty">
+          <span class="arrow">&larr;</span>
+          Cererea e goala. Cauta analize in stanga si vor aparea aici.
+        </div>
+      </div>
+
+      <div class="cart-footer">
+        <div class="cart-totals">
+          <span class="cart-totals-label">Total estimativ</span>
+          <span class="cart-totals-value" id="cartTotal">— RON</span>
+        </div>
+        <button class="cart-btn-process" id="btnProcess" disabled>Proceseaza cererea</button>
+        <button class="cart-btn-clear" id="btnClearCart">Goleste cererea</button>
+
+        <button class="disc-toggle-cart" id="discToggleCart">&#9881; Ajusteaza discount-uri</button>
+        <div class="disc-panel-cart" id="discPanelCart"></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<!-- Report modal -->
+<div class="report-overlay" id="reportOverlay">
+  <div class="report-box">
+    <div class="report-header">
+      <button class="report-close" id="reportClose" title="Inchide">&times;</button>
+      <div class="report-label">Pasul 3 &bull; Raport</div>
+      <h2 class="report-title">Pachet optim <em style="color:var(--gold);font-style:italic">combinat</em></h2>
+      <div class="report-patient" id="reportPatient"></div>
+      <div class="report-stats" id="reportStats"></div>
+    </div>
+    <div class="report-body" id="reportBody"></div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════ -->
+<!-- VIEW 2: BROWSE -->
+<!-- ═════════════════════════════════════════════════════════════ -->
+<div class="view" id="viewBrowse" style="display:none">
+  <div class="browse-search-section">
+    <div class="browse-search-inner">
+      <div class="browse-search-wrap">
+        <span class="search-icon">&#9906;</span>
+        <input type="text" id="q" placeholder="Cauta analiza: ex. TSH, hemograma, vitamina D..." autocomplete="off" spellcheck="false">
+      </div>
+      <select id="labFilter">
+        <option value="">Toate laboratoarele</option>
+        <option value="Clinica Sante">Clinica Sante</option>
+        <option value="Binisan">Binisan</option>
+        <option value="Derzelius">Derzelius</option>
+        <option value="Medilab">Medilab</option>
+        <option value="Poliana">Poliana</option>
+        <option value="Solomed">Solomed</option>
+      </select>
+      <button id="btnShowAll" type="button">&#8801; Vezi toate</button>
+      <button id="btnClearBrowse">&#10005; Sterge</button>
+    </div>
+  </div>
+
+  <div class="disc-section">
+    <div class="disc-inner">
+      <button class="disc-toggle" id="discToggle" type="button">
+        <span>&#9881; Ajusteaza discount-uri per laborator</span>
+        <span class="caret">&#9660;</span>
+      </button>
+      <div class="disc-panel" id="discPanel">
+        <div class="disc-title">Discount-uri aplicate la preturi</div>
+        <div class="disc-sub">Preturile afisate = pret de lista &times; (1 &minus; discount). Modifica procentele pentru a recalcula instant.</div>
+        <div class="disc-grid" id="discGrid"></div>
+        <div class="disc-actions">
+          <button class="disc-reset" id="btnResetDisc" type="button">&#8634; Reseteaza</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="browse-main">
+    <div class="filter-tabs" id="filterTabs">
+      <button class="filter-tab active" data-lab="">Toate</button>
+      <button class="filter-tab" data-lab="Clinica Sante">Clinica Sante</button>
+      <button class="filter-tab" data-lab="Binisan">Binisan</button>
+      <button class="filter-tab" data-lab="Derzelius">Derzelius</button>
+      <button class="filter-tab" data-lab="Medilab">Medilab</button>
+      <button class="filter-tab" data-lab="Poliana">Poliana</button>
+      <button class="filter-tab" data-lab="Solomed">Solomed</button>
+    </div>
+
+    <div class="info-bar" id="infoBar" style="display:none">
+      <span id="resCount">0 rezultate</span>
+      <button id="btnExport" type="button">&#11015; Export Excel</button>
+    </div>
+
+    <div class="rec-card" id="recCard" style="display:none">
+      <div class="rec-label">&#9733; Cel mai ieftin</div>
+      <div class="rec-main">
+        <div class="rec-info">
+          <div class="rec-name" id="recName"></div>
+          <div class="rec-meta" id="recMeta"></div>
+          <div class="rec-range" id="recRange"></div>
+        </div>
+        <div class="rec-price">
+          <span class="rec-price-value" id="recPrice"></span>
+          <span class="rec-price-unit">RON</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="tableArea"></div>
+    <div id="emptyState" class="empty-state">
+      <p>Incepe sa cauti o analiza in campul de mai sus, sau apasa <strong>Vezi toate</strong> pentru lista completa.</p>
+    </div>
+  </main>
+</div>
+
+<!-- Details modal (shared) -->
+<div class="modal-overlay" id="detailsModal">
+  <div class="modal-box">
+    <button class="modal-close" id="detailsModalClose" type="button" aria-label="Inchide">&times;</button>
+    <div class="modal-header">
+      <div class="modal-tag">Detalii analiza</div>
+      <h2 class="modal-title" id="detailsModalTitle">—</h2>
+    </div>
+    <div class="modal-body" id="detailsModalBody"></div>
+  </div>
+</div>
+
+<footer>
+  Clinica Central &bull; Preturi din listele publice &bull; Actualizat <strong>2026</strong> &bull; Verifica intotdeauna pretul direct la laborator
+</footer>
+
+<script>
+// Simple data loader — no encryption, no login
+(async function(){
+  try {
+    const [dataResp, santeResp, binisanResp] = await Promise.all([
+      fetch("assets/data/analize.json"),
+      fetch("assets/data/details_sante.json").catch(() => null),
+      fetch("assets/data/details_binisan.json").catch(() => null)
+    ]);
+    window.__ANALIZE_DATA__ = await dataResp.json();
+    window.__DETAILS_SANTE__ = santeResp && santeResp.ok ? await santeResp.json() : {};
+    window.__DETAILS_BINISAN__ = binisanResp && binisanResp.ok ? await binisanResp.json() : {};
+  } catch (e) {
+    console.error("Eroare incarcare date:", e);
+    document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif">Eroare la incarcarea datelor. Verifica consola browser-ului.</div>';
+    return;
+  }
+  const s = document.createElement("script");
+  s.src = "assets/js/app.js";
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>
