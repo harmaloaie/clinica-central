@@ -48,6 +48,11 @@
           <span class="cnp-status" id="cnpStatus"></span>
         </div>
         <div class="cnp-error" id="cnpError"></div>
+
+        <button type="button" class="scan-btn" id="btnScan">
+          <span class="scan-icon">&#128247;</span>
+          <span>Scaneaza bilet de trimitere</span>
+        </button>
       </div>
 
       <div class="search-area">
@@ -195,6 +200,70 @@
   </div>
 </div>
 
+<!-- Scan modal: choose camera or file upload -->
+<div class="modal-overlay" id="scanModal">
+  <div class="modal-box scan-modal-box">
+    <button class="modal-close" id="scanModalClose" type="button" aria-label="Inchide">&times;</button>
+    <div class="modal-header">
+      <div class="modal-tag">Scaneaza bilet</div>
+      <h2 class="modal-title">Bilet de trimitere</h2>
+      <p style="font-size:13px;color:rgba(15,17,23,0.55);margin-top:10px;line-height:1.5">Fotografiaza sau incarca biletul de trimitere CAS. AI-ul va extrage automat CNP-ul si analizele.</p>
+    </div>
+    <div class="modal-body">
+      <div id="scanPickerArea">
+        <label class="scan-option" for="scanCameraInput">
+          <div class="scan-option-icon">&#128247;</div>
+          <div class="scan-option-text">
+            <strong>Fa o poza</strong>
+            <span>Foloseste camera telefonului</span>
+          </div>
+        </label>
+        <input type="file" id="scanCameraInput" accept="image/*" capture="environment" style="display:none">
+
+        <label class="scan-option" for="scanFileInput">
+          <div class="scan-option-icon">&#128229;</div>
+          <div class="scan-option-text">
+            <strong>Incarca fisier</strong>
+            <span>Selecteaza o poza din galerie/computer</span>
+          </div>
+        </label>
+        <input type="file" id="scanFileInput" accept="image/*" style="display:none">
+      </div>
+
+      <div id="scanProcessingArea" style="display:none">
+        <div class="scan-preview">
+          <img id="scanPreviewImg" alt="Preview">
+        </div>
+        <div class="scan-status" id="scanStatus">
+          <div class="scan-spinner"></div>
+          <div>
+            <strong id="scanStatusText">Se proceseaza imaginea...</strong>
+            <small id="scanStatusSub">Claude analizeaza biletul si extrage analizele</small>
+          </div>
+        </div>
+      </div>
+
+      <div id="scanErrorArea" style="display:none">
+        <div class="scan-error" id="scanErrorText"></div>
+        <button type="button" class="scan-retry-btn" id="scanRetryBtn">Incearca din nou</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Preview modal: show extracted analize with match status -->
+<div class="modal-overlay" id="scanResultModal">
+  <div class="modal-box scan-result-box">
+    <button class="modal-close" id="scanResultClose" type="button" aria-label="Inchide">&times;</button>
+    <div class="modal-header">
+      <div class="modal-tag">Rezultat scanare</div>
+      <h2 class="modal-title">Analize extrase din bilet</h2>
+      <div id="scanResultSummary" class="scan-result-summary"></div>
+    </div>
+    <div class="modal-body" id="scanResultBody"></div>
+  </div>
+</div>
+
 <footer>
   Clinica Central &bull; Preturi din listele publice &bull; Actualizat <strong>2026</strong> &bull; Verifica intotdeauna pretul direct la laborator
 </footer>
@@ -203,14 +272,16 @@
 // Simple data loader — no encryption, no login
 (async function(){
   try {
-    const [dataResp, santeResp, binisanResp] = await Promise.all([
+    const [dataResp, santeResp, binisanResp, polianaResp] = await Promise.all([
       fetch("assets/data/analize.json"),
       fetch("assets/data/details_sante.json").catch(() => null),
-      fetch("assets/data/details_binisan.json").catch(() => null)
+      fetch("assets/data/details_binisan.json").catch(() => null),
+      fetch("assets/data/details_poliana.json").catch(() => null)
     ]);
     window.__ANALIZE_DATA__ = await dataResp.json();
     window.__DETAILS_SANTE__ = santeResp && santeResp.ok ? await santeResp.json() : {};
     window.__DETAILS_BINISAN__ = binisanResp && binisanResp.ok ? await binisanResp.json() : {};
+    window.__DETAILS_POLIANA__ = polianaResp && polianaResp.ok ? await polianaResp.json() : {};
   } catch (e) {
     console.error("Eroare incarcare date:", e);
     document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif">Eroare la incarcarea datelor. Verifica consola browser-ului.</div>';

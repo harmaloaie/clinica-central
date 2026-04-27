@@ -7,7 +7,8 @@
 var DATA = window.__ANALIZE_DATA__ || [];
 var DETAILS = {
   "Clinica Sante": window.__DETAILS_SANTE__ || {},
-  "Binisan":       window.__DETAILS_BINISAN__ || {}
+  "Binisan":       window.__DETAILS_BINISAN__ || {},
+  "Poliana":       window.__DETAILS_POLIANA__ || {}
 };
 
 var DEFAULT_DISCOUNTS = {
@@ -842,6 +843,337 @@ document.getElementById("btnExport").addEventListener("click", function() {
   var date = new Date();
   XLSX.writeFile(wb, "export_analize_" + date.getFullYear() + "-" + String(date.getMonth()+1).padStart(2,"0") + "-" + String(date.getDate()).padStart(2,"0") + ".xlsx");
 });
+
+// ════════════════════════════════════════════════════════════════
+// SCAN FEATURE (OCR cu Claude API)
+// ════════════════════════════════════════════════════════════════
+var scanModal = document.getElementById("scanModal");
+var scanResultModal = document.getElementById("scanResultModal");
+var scanPickerArea = document.getElementById("scanPickerArea");
+var scanProcessingArea = document.getElementById("scanProcessingArea");
+var scanErrorArea = document.getElementById("scanErrorArea");
+
+document.getElementById("btnScan").addEventListener("click", function() {
+  resetScanModal();
+  scanModal.classList.add("visible");
+});
+document.getElementById("scanModalClose").addEventListener("click", function() {
+  scanModal.classList.remove("visible");
+});
+scanModal.addEventListener("click", function(e) {
+  if (e.target === scanModal) scanModal.classList.remove("visible");
+});
+document.getElementById("scanResultClose").addEventListener("click", function() {
+  scanResultModal.classList.remove("visible");
+});
+scanResultModal.addEventListener("click", function(e) {
+  if (e.target === scanResultModal) scanResultModal.classList.remove("visible");
+});
+document.getElementById("scanRetryBtn").addEventListener("click", resetScanModal);
+
+function resetScanModal() {
+  scanPickerArea.style.display = "block";
+  scanProcessingArea.style.display = "none";
+  scanErrorArea.style.display = "none";
+  document.getElementById("scanCameraInput").value = "";
+  document.getElementById("scanFileInput").value = "";
+}
+
+document.getElementById("scanCameraInput").addEventListener("change", function(e) {
+  if (e.target.files[0]) handleScanFile(e.target.files[0]);
+});
+document.getElementById("scanFileInput").addEventListener("change", function(e) {
+  if (e.target.files[0]) handleScanFile(e.target.files[0]);
+});
+
+async function handleScanFile(file) {
+  scanPickerArea.style.display = "none";
+  scanErrorArea.style.display = "none";
+  scanProcessingArea.style.display = "block";
+
+  // Show preview
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    document.getElementById("scanPreviewImg").src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+
+  // Convert file to base64 for Claude API
+  var base64Data;
+  try {
+    base64Data = await fileToBase64(file);
+  } catch (e) {
+    showScanError("Nu pot citi fisierul imagine: " + e.message);
+    return;
+  }
+
+  // Detect media type
+  var mediaType = file.type || "image/jpeg";
+  if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mediaType)) {
+    mediaType = "image/jpeg";
+  }
+
+  // Call Claude API
+  document.getElementById("scanStatusText").textContent = "Se analizeaza biletul...";
+  document.getElementById("scanStatusSub").textContent = "Claude citeste imaginea si extrage datele";
+
+  try {
+    var extracted = await extractFromImage(base64Data, mediaType);
+    showScanResults(extracted);
+  } catch (e) {
+    showScanError("Eroare la procesare: " + (e.message || e));
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() {
+      var b64 = reader.result.split(",")[1];
+      resolve(b64);
+    };
+    reader.onerror = function() { reject(new Error("FileReader failed")); };
+    reader.readAsDataURL(file);
+  });
+}
+
+function showScanError(msg) {
+  scanProcessingArea.style.display = "none";
+  scanErrorArea.style.display = "block";
+  document.getElementById("scanErrorText").textContent = msg;
+}
+
+async function extractFromImage(base64Data, mediaType) {
+  var prompt = "Analizeaza acest bilet de trimitere medical romanesc (CAS). Extrage:\n\n" +
+    "1. **CNP-ul pacientului** (13 cifre) — cauta in campul 'CID/CNP/CE/PASS'\n" +
+    "2. **Lista analizelor medicale** recomandate (coloana 'Investigatii recomandate')\n\n" +
+    "Pentru fiecare analiza, returneaza EXACT textul asa cum e scris pe bilet (chiar daca are typo-uri sau abrevieri).\n\n" +
+    "Raspunde DOAR cu JSON valid, fara alte comentarii, fara code blocks. Format:\n" +
+    "{\n" +
+    '  "cnp": "string 13 cifre sau null daca nu e clar",\n' +
+    '  "analize": ["denumire analiza 1", "denumire analiza 2", ...]\n' +
+    "}\n\n" +
+    "Daca biletul nu e lizibil sau nu e un bilet medical, returneaza { \"cnp\": null, \"analize\": [] }.";
+
+  var response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
+            { type: "text", text: prompt }
+          ]
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    var errText = await response.text();
+    throw new Error("API a raspuns cu " + response.status + ": " + errText.substring(0, 200));
+  }
+
+  var result = await response.json();
+  var textBlocks = result.content.filter(function(b){ return b.type === "text"; });
+  if (!textBlocks.length) throw new Error("Raspuns gol de la API");
+
+  var responseText = textBlocks.map(function(b){ return b.text; }).join("\n").trim();
+  // Strip code fences if Claude added them anyway
+  responseText = responseText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+
+  var parsed;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch (e) {
+    throw new Error("Nu pot parsa raspunsul AI: " + responseText.substring(0, 150));
+  }
+
+  if (!parsed.analize || !Array.isArray(parsed.analize)) {
+    throw new Error("Format neasteptat de raspuns (lipseste lista de analize)");
+  }
+
+  return {
+    cnp: parsed.cnp || null,
+    analize: parsed.analize
+  };
+}
+
+function findBestMatch(extractedText) {
+  // Try to find this analysis in ANALIZE_INDEX using fuzzy matching
+  var target = normName(extractedText);
+  if (!target) return null;
+
+  // Try exact match first
+  if (ANALIZE_INDEX[target]) {
+    return { entry: ANALIZE_INDEX[target], score: 1.0 };
+  }
+
+  // Scored matching: startsWith > contains > word overlap
+  var targetWords = target.split(" ").filter(function(w){ return w.length >= 3; });
+  var best = null;
+  var bestScore = 0;
+
+  for (var i = 0; i < ANALIZE_LIST.length; i++) {
+    var entry = ANALIZE_LIST[i];
+    var key = entry.key;
+    var score = 0;
+
+    if (key === target) { score = 1.0; }
+    else if (key.indexOf(target) === 0) { score = 0.9; }
+    else if (target.indexOf(key) === 0) { score = 0.85; }
+    else if (key.indexOf(target) !== -1) { score = 0.75; }
+    else if (target.indexOf(key) !== -1) { score = 0.7; }
+    else if (targetWords.length >= 2) {
+      // Word overlap
+      var keyWords = key.split(" ");
+      var matched = 0;
+      for (var w = 0; w < targetWords.length; w++) {
+        if (keyWords.indexOf(targetWords[w]) !== -1) matched++;
+      }
+      if (matched >= Math.min(2, targetWords.length)) {
+        score = 0.5 + (matched / targetWords.length) * 0.3;
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = entry;
+    }
+  }
+
+  return bestScore >= 0.6 ? { entry: best, score: bestScore } : null;
+}
+
+function showScanResults(extracted) {
+  scanModal.classList.remove("visible");
+
+  // Match each extracted analiza against our database
+  var matched = [];
+  var unmatched = [];
+  for (var i = 0; i < extracted.analize.length; i++) {
+    var txt = extracted.analize[i];
+    var match = findBestMatch(txt);
+    if (match) {
+      matched.push({ extracted: txt, entry: match.entry, score: match.score, checked: true });
+    } else {
+      unmatched.push(txt);
+    }
+  }
+
+  // Summary
+  var summaryHtml = '';
+  if (extracted.cnp && /^\d{13}$/.test(extracted.cnp)) {
+    summaryHtml += '<div class="scan-result-cnp"><span class="label">CNP detectat</span><strong>' + esc(extracted.cnp) + '</strong></div>';
+  }
+  summaryHtml += '<span class="stat"><strong>' + matched.length + '</strong> gasite</span>';
+  if (unmatched.length) summaryHtml += '<span class="stat" style="color:var(--accent)"><strong>' + unmatched.length + '</strong> necunoscute</span>';
+  document.getElementById("scanResultSummary").innerHTML = summaryHtml;
+
+  // Body
+  var body = '';
+  if (matched.length > 0) {
+    body += '<div class="scan-section-title">Analize gasite in baza (selecteaza care vrei sa adaugi)</div>';
+    body += '<ul class="scan-items" id="scanMatchedList">';
+    for (var i = 0; i < matched.length; i++) {
+      var m = matched[i];
+      var ch = cheapestOffer(m.entry);
+      body += '<li class="scan-item" data-idx="' + i + '">';
+      body += '<div class="scan-item-check checked" data-idx="' + i + '"></div>';
+      body += '<div class="scan-item-info">';
+      body += '<div class="scan-item-name">' + esc(m.entry.displayName);
+      body += '<span class="scan-item-lab lab-bg-' + labCls(ch.offer.Laborator) + '">' + esc(ch.offer.Laborator) + '</span></div>';
+      if (normName(m.extracted) !== m.entry.key) {
+        body += '<div class="scan-item-extracted">pe bilet: „' + esc(m.extracted) + '"</div>';
+      }
+      body += '</div>';
+      body += '<div class="scan-item-price">' + ch.finalPrice + ' RON</div>';
+      body += '</li>';
+    }
+    body += '</ul>';
+  }
+
+  if (unmatched.length > 0) {
+    body += '<div class="scan-section-title">Analize care nu au fost gasite</div>';
+    body += '<ul class="scan-items">';
+    for (var i = 0; i < unmatched.length; i++) {
+      body += '<li class="scan-item">';
+      body += '<div style="width:20px;flex-shrink:0;text-align:center;color:rgba(15,17,23,0.3);font-size:18px">&times;</div>';
+      body += '<div class="scan-item-info">';
+      body += '<div class="scan-item-name" style="color:rgba(15,17,23,0.6)">' + esc(unmatched[i]) + '</div>';
+      body += '<div class="scan-item-nomatch">nu exista in nicio lista de laborator</div>';
+      body += '</div></li>';
+    }
+    body += '</ul>';
+  }
+
+  if (matched.length === 0 && unmatched.length === 0) {
+    body += '<p style="padding:32px;text-align:center;color:rgba(15,17,23,0.5)">Nicio analiza detectata pe bilet. Incearca o poza mai clara.</p>';
+  }
+
+  body += '<div class="scan-result-actions">';
+  if (matched.length > 0) {
+    body += '<button class="primary" id="btnAddAllScan">Adauga ' + matched.length + ' analize selectate</button>';
+  }
+  body += '<button id="btnCancelScan">Anuleaza</button>';
+  body += '</div>';
+
+  document.getElementById("scanResultBody").innerHTML = body;
+  scanResultModal.classList.add("visible");
+
+  // Store matched for adding later
+  window.__scanMatched = matched;
+  window.__scanCnp = extracted.cnp;
+
+  // Wire up checkboxes
+  var checks = document.querySelectorAll("#scanMatchedList .scan-item-check");
+  for (var i = 0; i < checks.length; i++) {
+    (function(el) {
+      el.addEventListener("click", function() {
+        var idx = parseInt(el.getAttribute("data-idx"));
+        window.__scanMatched[idx].checked = !window.__scanMatched[idx].checked;
+        el.classList.toggle("checked");
+      });
+    })(checks[i]);
+  }
+
+  document.getElementById("btnCancelScan").addEventListener("click", function() {
+    scanResultModal.classList.remove("visible");
+  });
+
+  var addBtn = document.getElementById("btnAddAllScan");
+  if (addBtn) {
+    addBtn.addEventListener("click", function() {
+      // Pre-populate CNP if detected
+      if (window.__scanCnp && /^\d{13}$/.test(window.__scanCnp)) {
+        cnpInput.value = window.__scanCnp;
+        updateCnpUi();
+      }
+      // Add selected analize to cart
+      var added = 0;
+      for (var i = 0; i < window.__scanMatched.length; i++) {
+        if (window.__scanMatched[i].checked) {
+          addToCart(window.__scanMatched[i].entry.key);
+          added++;
+        }
+      }
+      scanResultModal.classList.remove("visible");
+      // Small visual feedback
+      if (added > 0) {
+        var toast = document.createElement("div");
+        toast.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:12px 20px;border-radius:var(--radius);font-size:14px;z-index:2000;box-shadow:0 8px 24px rgba(0,0,0,0.3)";
+        toast.textContent = "✓ " + added + " analize adaugate in cerere";
+        document.body.appendChild(toast);
+        setTimeout(function() { toast.style.opacity = "0"; toast.style.transition = "opacity 0.3s"; }, 2000);
+        setTimeout(function() { toast.remove(); }, 2500);
+      }
+    });
+  }
+}
 
 // ════════════════════════════════════════════════════════════════
 // DETAILS MODAL (shared)
