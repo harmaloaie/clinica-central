@@ -1,4 +1,12 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "clinica-central-cerere-analize",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "single-page-application"
+  }
+}
      "$schema": "node_modules/wrangler/config-schema.json",
      "name": "clinica-central-cerere-analize",
      "compatibility_date": "2025-01-01",

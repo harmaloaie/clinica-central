@@ -1,4 +1,14 @@
 supabase/
+*.sql
+data-source/
+scripts/
+*.md
+wrangler.jsonc
+.gitignore
+node_modules/
+*.bak
+*.tmp
+.github/
    *.sql
    data-source/
    scripts/

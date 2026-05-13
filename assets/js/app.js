@@ -134,6 +134,7 @@ function cheapestOffer(entry) {
 function switchView(name) {
   document.getElementById("viewCart").style.display = (name === "cart") ? "block" : "none";
   document.getElementById("viewBrowse").style.display = (name === "browse") ? "block" : "none";
+  document.getElementById("viewIstoric").style.display = (name === "istoric") ? "block" : "none";
   var tabs = document.querySelectorAll(".topbar-tab");
   for (var i = 0; i < tabs.length; i++) {
     var t = tabs[i];
@@ -142,11 +143,13 @@ function switchView(name) {
     t.setAttribute("aria-selected", isActive ? "true" : "false");
   }
   if (name === "cart") {
-    // If CNP already valid and search enabled, focus search; else CNP
     if (!cartState.cnpValid) cnpInput.focus();
     else cartSearchInput.focus();
-  } else {
+  } else if (name === "browse") {
     document.getElementById("q").focus();
+  } else if (name === "istoric") {
+    // Auto-load on first switch to istoric (and refresh data each time)
+    if (typeof loadIstoric === "function") loadIstoric();
   }
 }
 var tabs = document.querySelectorAll(".topbar-tab");
@@ -606,6 +609,9 @@ function openReport() {
   document.getElementById("btnCloseReport").addEventListener("click", closeReport);
   document.getElementById("btnExportReport").addEventListener("click", function() { exportReportXlsx(r); });
   document.getElementById("btnExportJson").addEventListener("click", function() { exportReportJson(r); });
+
+  // Auto-save the cerere to Supabase (non-blocking, but show status)
+  saveCerere(r);
 }
 function closeReport() {
   document.getElementById("reportOverlay").classList.remove("visible");
@@ -1388,3 +1394,306 @@ document.getElementById("detailsModal").addEventListener("click", function(e) {
 updateCnpUi();
 renderCart();
 cnpInput.focus();
+
+
+// ════════════════════════════════════════════════════════════════
+// SUPABASE — save cerere to DB (auto-called on openReport)
+// ════════════════════════════════════════════════════════════════
+async function saveCerere(r) {
+  if (!window.sb || !window.__CURRENT_USER__) {
+    console.warn("[saveCerere] Supabase sau user lipseste, nu pot salva.");
+    return null;
+  }
+
+  var totalEprubete = 0;
+  var eprubete = buildEprubetSummary(r.items).map(function(e) {
+    totalEprubete += e.count;
+    return { tip: e.tip, bucati: e.count, pentruLocatii: e.breakdown };
+  });
+
+  var payload = {
+    cnp_pacient: cartState.cnp,
+    user_id: window.__CURRENT_USER__.id,
+    user_email: window.__CURRENT_USER__.email,
+    numar_analize: r.items.length,
+    numar_laboratoare: r.groups.length,
+    numar_eprubete: totalEprubete,
+    total_lista_ron: r.grandListTotal,
+    total_final_ron: r.grandTotal,
+    economie_ron: r.grandListTotal - r.grandTotal,
+    items: r.items.map(function(it) {
+      var d = getDetails(it.offer.Laborator, it.displayName);
+      return {
+        denumire: it.displayName,
+        laborator: it.offer.Laborator,
+        pret_lista: it.offer.Pret,
+        pret_final: it.finalPrice,
+        discount: it.discount,
+        timp: (it.offer.Timp && it.offer.Timp !== "N/A") ? it.offer.Timp : null,
+        categorie: (it.offer.Categorie && it.offer.Categorie !== "N/A") ? it.offer.Categorie : null,
+        detalii: d ? {
+          recipient: d.Recipient || null,
+          culoareDop: d.CuloareDop || null,
+          materialBiologic: d.MaterialBiologic || null,
+          cantitateMinima: d.CantitateMinima || null,
+          laboratorSubcontractant: d.LaboratorSubcontractant || null,
+          observatii: d.Observatii || null
+        } : null
+      };
+    }),
+    groups: r.groups.map(function(g) {
+      return {
+        laborator: g.lab,
+        numar_analize: g.items.length,
+        subtotal_lista: g.listTotal,
+        subtotal_final: g.total,
+        economie: g.listTotal - g.total
+      };
+    }),
+    eprubete: eprubete,
+    discounts: Object.assign({}, discounts)
+  };
+
+  try {
+    var result = await window.sb.from("cc_cereri").insert([payload]).select().single();
+    if (result.error) {
+      console.error("[saveCerere] Eroare salvare:", result.error);
+      showSaveStatus(false, result.error.message);
+      return null;
+    }
+    console.log("[saveCerere] Cerere salvata:", result.data.id);
+    showSaveStatus(true);
+    return result.data;
+  } catch (e) {
+    console.error("[saveCerere] Exceptie:", e);
+    showSaveStatus(false, e.message);
+    return null;
+  }
+}
+
+function showSaveStatus(success, errorMsg) {
+  var existing = document.getElementById("saveStatusToast");
+  if (existing) existing.remove();
+
+  var toast = document.createElement("div");
+  toast.id = "saveStatusToast";
+  toast.style.cssText = "position:fixed;top:24px;right:24px;padding:12px 18px;border-radius:6px;font-family:DM Sans,sans-serif;font-size:13px;font-weight:500;z-index:2000;box-shadow:0 8px 24px rgba(0,0,0,0.15)";
+  if (success) {
+    toast.style.background = "#dcfce7";
+    toast.style.color = "#166534";
+    toast.style.border = "1px solid #86efac";
+    toast.textContent = "\u2713 Cerere salvata in baza de date";
+  } else {
+    toast.style.background = "#fee2e2";
+    toast.style.color = "#7c2015";
+    toast.style.border = "1px solid #fca5a5";
+    toast.textContent = "\u2717 Eroare la salvare: " + (errorMsg || "necunoscuta");
+  }
+  document.body.appendChild(toast);
+  setTimeout(function() {
+    toast.style.transition = "opacity 0.3s";
+    toast.style.opacity = "0";
+  }, 3000);
+  setTimeout(function() { toast.remove(); }, 3400);
+}
+
+// ════════════════════════════════════════════════════════════════
+// ISTORIC VIEW — load & display cereri din DB
+// ════════════════════════════════════════════════════════════════
+var istoricState = {
+  loaded: false,
+  cereri: [],
+  filterCnp: "",
+  filterFrom: null,
+  filterTo: null
+};
+
+async function loadIstoric() {
+  var listEl = document.getElementById("istoricList");
+  listEl.innerHTML = '<div class="istoric-loading">Se incarca...</div>';
+
+  if (!window.sb) {
+    listEl.innerHTML = '<div class="istoric-error">Eroare: Supabase nu e disponibil.</div>';
+    return;
+  }
+
+  try {
+    var result = await window.sb
+      .from("cc_cereri")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (result.error) {
+      listEl.innerHTML = '<div class="istoric-error">Eroare incarcare: ' + esc(result.error.message) + '</div>';
+      return;
+    }
+    istoricState.cereri = result.data || [];
+    istoricState.loaded = true;
+    renderIstoric();
+  } catch (e) {
+    listEl.innerHTML = '<div class="istoric-error">Eroare: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderIstoric() {
+  var listEl = document.getElementById("istoricList");
+  var statsEl = document.getElementById("istoricStats");
+
+  // Apply filters
+  var filtered = istoricState.cereri.filter(function(c) {
+    if (istoricState.filterCnp && c.cnp_pacient.indexOf(istoricState.filterCnp) === -1) return false;
+    if (istoricState.filterFrom) {
+      var d = new Date(c.created_at);
+      var from = new Date(istoricState.filterFrom + "T00:00:00");
+      if (d < from) return false;
+    }
+    if (istoricState.filterTo) {
+      var d = new Date(c.created_at);
+      var to = new Date(istoricState.filterTo + "T23:59:59");
+      if (d > to) return false;
+    }
+    return true;
+  });
+
+  // Stats
+  var totalRon = filtered.reduce(function(s, c){ return s + Number(c.total_final_ron); }, 0);
+  var totalAnalize = filtered.reduce(function(s, c){ return s + c.numar_analize; }, 0);
+  var uniqueCnps = {};
+  filtered.forEach(function(c){ uniqueCnps[c.cnp_pacient] = true; });
+
+  statsEl.innerHTML =
+    '<div class="istoric-stat"><span class="num">' + filtered.length + '</span><span class="lab">cereri</span></div>' +
+    '<div class="istoric-stat"><span class="num">' + Object.keys(uniqueCnps).length + '</span><span class="lab">pacienti unici</span></div>' +
+    '<div class="istoric-stat"><span class="num">' + totalAnalize + '</span><span class="lab">analize totale</span></div>' +
+    '<div class="istoric-stat"><span class="num">' + Math.round(totalRon) + '</span><span class="lab">RON total</span></div>';
+
+  if (filtered.length === 0) {
+    if (istoricState.cereri.length === 0) {
+      listEl.innerHTML = '<div class="istoric-empty"><h3>Nicio cerere salvata</h3><p>Cererile procesate de pe tab-ul „Cerere analize" vor aparea aici automat.</p></div>';
+    } else {
+      listEl.innerHTML = '<div class="istoric-empty"><h3>Niciun rezultat pentru filtrele aplicate</h3><p>Modifica filtrele sau apasa „Reseteaza filtre".</p></div>';
+    }
+    return;
+  }
+
+  var html = "";
+  for (var i = 0; i < filtered.length; i++) {
+    var c = filtered[i];
+    var date = new Date(c.created_at);
+    var dateStr = date.toLocaleString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    html += '<div class="istoric-row" data-id="' + esc(c.id) + '">';
+    html += '<div class="istoric-row-main">';
+    html += '<div class="istoric-row-cnp">' + esc(c.cnp_pacient) + '</div>';
+    html += '<div class="istoric-row-meta">';
+    html += '<span>' + esc(dateStr) + '</span>';
+    html += '<span>' + c.numar_analize + ' analize</span>';
+    html += '<span>' + c.numar_laboratoare + ' lab' + (c.numar_laboratoare === 1 ? '' : '.') + '</span>';
+    html += '<span>' + c.numar_eprubete + ' eprubete</span>';
+    if (c.user_email) html += '<span class="istoric-user">' + esc(c.user_email) + '</span>';
+    html += '</div></div>';
+    html += '<div class="istoric-row-price"><strong>' + Math.round(c.total_final_ron) + '</strong> RON</div>';
+    html += '<button class="istoric-row-btn" data-id="' + esc(c.id) + '">Detalii</button>';
+    html += '</div>';
+  }
+  listEl.innerHTML = html;
+
+  var btns = listEl.querySelectorAll(".istoric-row-btn");
+  for (var i = 0; i < btns.length; i++) {
+    (function(btn) {
+      btn.addEventListener("click", function() {
+        showIstoricDetail(btn.getAttribute("data-id"));
+      });
+    })(btns[i]);
+  }
+}
+
+function showIstoricDetail(id) {
+  var c = istoricState.cereri.find(function(x){ return x.id === id; });
+  if (!c) return;
+
+  var modal = document.getElementById("istoricDetailModal");
+  var title = document.getElementById("istoricDetailTitle");
+  var meta = document.getElementById("istoricDetailMeta");
+  var body = document.getElementById("istoricDetailBody");
+
+  title.textContent = "CNP " + c.cnp_pacient;
+  var dateStr = new Date(c.created_at).toLocaleString("ro-RO");
+  meta.innerHTML =
+    '<div class="istoric-detail-meta-row"><span>Procesat la:</span><strong>' + esc(dateStr) + '</strong></div>' +
+    (c.user_email ? '<div class="istoric-detail-meta-row"><span>De catre:</span><strong>' + esc(c.user_email) + '</strong></div>' : '') +
+    '<div class="istoric-detail-meta-row"><span>Total:</span><strong>' + Math.round(c.total_final_ron) + ' RON</strong> (economie: ' + Math.round(c.economie_ron) + ' RON)</div>';
+
+  // Body — show groups + items
+  var html = '';
+  html += '<div class="istoric-detail-section-title">Analize pe laboratoare</div>';
+  var groups = c.groups || [];
+  for (var g = 0; g < groups.length; g++) {
+    var grp = groups[g];
+    var grpItems = (c.items || []).filter(function(it){ return it.laborator === grp.laborator; });
+    html += '<div class="istoric-detail-group">';
+    html += '<div class="istoric-detail-group-header"><span class="suggestion-lab lab-bg-' + labCls(grp.laborator) + '">' + esc(grp.laborator) + '</span>';
+    html += '<span class="istoric-detail-group-subtotal">' + Math.round(grp.subtotal_final) + ' RON</span></div>';
+    html += '<ul class="istoric-detail-group-items">';
+    for (var i = 0; i < grpItems.length; i++) {
+      var it = grpItems[i];
+      html += '<li><span class="den">' + esc(it.denumire) + '</span><span class="prc">' + Math.round(it.pret_final) + ' RON</span></li>';
+    }
+    html += '</ul></div>';
+  }
+
+  // Eprubete summary
+  if (c.eprubete && c.eprubete.length) {
+    html += '<div class="istoric-detail-section-title">Eprubete necesare (' + c.numar_eprubete + ')</div>';
+    html += '<ul class="istoric-detail-eprubete">';
+    for (var e = 0; e < c.eprubete.length; e++) {
+      var ep = c.eprubete[e];
+      html += '<li><span class="ep-count">' + ep.bucati + '\u00d7</span><span class="ep-text">' + esc(ep.tip);
+      var locs = Object.keys(ep.pentruLocatii || {});
+      if (locs.length) {
+        html += '<small>' + esc(locs.map(function(l){
+          return (ep.pentruLocatii[l] > 1 ? ep.pentruLocatii[l] + "\u00d7 " : "") + "\u2192 " + l;
+        }).join(" \u2022 ")) + '</small>';
+      }
+      html += '</span></li>';
+    }
+    html += '</ul>';
+  }
+
+  body.innerHTML = html;
+  modal.classList.add("visible");
+  document.body.style.overflow = "hidden";
+}
+
+function closeIstoricDetail() {
+  document.getElementById("istoricDetailModal").classList.remove("visible");
+  document.body.style.overflow = "";
+}
+
+// Wire up Istoric controls
+document.getElementById("btnIstoricRefresh").addEventListener("click", loadIstoric);
+document.getElementById("istoricDetailClose").addEventListener("click", closeIstoricDetail);
+document.getElementById("istoricDetailModal").addEventListener("click", function(e){
+  if (e.target === this) closeIstoricDetail();
+});
+
+document.getElementById("istoricSearchCnp").addEventListener("input", function(e) {
+  istoricState.filterCnp = e.target.value.replace(/\D/g, '');
+  if (istoricState.loaded) renderIstoric();
+});
+document.getElementById("istoricFilterFrom").addEventListener("change", function(e) {
+  istoricState.filterFrom = e.target.value;
+  if (istoricState.loaded) renderIstoric();
+});
+document.getElementById("istoricFilterTo").addEventListener("change", function(e) {
+  istoricState.filterTo = e.target.value;
+  if (istoricState.loaded) renderIstoric();
+});
+document.getElementById("btnIstoricClearFilters").addEventListener("click", function() {
+  istoricState.filterCnp = "";
+  istoricState.filterFrom = null;
+  istoricState.filterTo = null;
+  document.getElementById("istoricSearchCnp").value = "";
+  document.getElementById("istoricFilterFrom").value = "";
+  document.getElementById("istoricFilterTo").value = "";
+  if (istoricState.loaded) renderIstoric();
+});

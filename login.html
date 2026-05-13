@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login &mdash; Clinica Central</title>
+<link rel="icon" type="image/jpeg" href="assets/img/logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #0F1117;
+  --paper: #F8F6F1;
+  --cream: #EFEAD9;
+  --gold: #B8973A;
+  --accent: #C8392B;
+  --radius: 6px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--paper);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--ink);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.login-box {
+  max-width: 420px;
+  width: 100%;
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 40px 36px;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.08);
+  border-top: 4px solid var(--gold);
+}
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 28px;
+}
+.login-brand img {
+  width: 64px;
+  height: auto;
+  border-radius: 6px;
+  margin-bottom: 14px;
+}
+.login-brand .label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+.login-brand h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.8rem;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.login-brand h1 em { font-style: italic; color: var(--gold); }
+.login-brand .sub {
+  font-size: 12px;
+  color: rgba(15,17,23,0.6);
+  margin-top: 8px;
+  letter-spacing: 0.3px;
+}
+.field { margin-bottom: 16px; }
+.field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(15,17,23,0.6);
+  margin-bottom: 6px;
+}
+.field input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1.5px solid rgba(15,17,23,0.15);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.field input:focus { border-color: var(--gold); background: #fff; }
+.login-btn {
+  width: 100%;
+  padding: 13px 18px;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 6px;
+}
+.login-btn:hover { background: var(--gold); color: var(--ink); }
+.login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-msg {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  text-align: center;
+  display: none;
+}
+.login-msg.error {
+  background: rgba(200,57,43,0.08);
+  color: #7c2015;
+  border: 1px solid rgba(200,57,43,0.2);
+  display: block;
+}
+.login-msg.success {
+  background: rgba(34,139,34,0.08);
+  color: #2c5d2c;
+  border: 1px solid rgba(34,139,34,0.2);
+  display: block;
+}
+footer {
+  position: fixed;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(15,17,23,0.4);
+  letter-spacing: 0.5px;
+}
+</style>
+</head>
+<body>
+
+<div class="login-box">
+  <div class="login-brand">
+    <img src="assets/img/logo.jpg" alt="Clinica Central">
+    <span class="label">Clinica Central &bull; Pitesti</span>
+    <h1>Clinica <em>Central</em></h1>
+    <div class="sub">Cerere analize &amp; comparator preturi</div>
+  </div>
+
+  <form id="loginForm" autocomplete="on">
+    <div class="field">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required autocomplete="username" autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Parola</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password">
+    </div>
+    <button type="submit" class="login-btn" id="btnLogin">Autentificare</button>
+    <div class="login-msg" id="loginMsg"></div>
+  </form>
+</div>
+
+<footer>
+  Clinica Central &bull; Pitesti &bull; Acces restrictionat
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/shared/config.js"></script>
+<script src="assets/shared/supabase-client.js"></script>
+<script>
+(async function() {
+  // Daca e deja logat si are acces, redirect la index
+  if (window.sb) {
+    var session = (await window.sb.auth.getSession()).data.session;
+    if (session && session.user) {
+      var access = await window.sb
+        .from("cc_useri_acces")
+        .select("acces_central")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+      if (access.data && access.data.acces_central) {
+        window.location.href = "index.html";
+        return;
+      }
+    }
+  }
+})();
+
+document.getElementById("loginForm").addEventListener("submit", async function(e) {
+  e.preventDefault();
+  var btn = document.getElementById("btnLogin");
+  var msg = document.getElementById("loginMsg");
+  var email = document.getElementById("email").value.trim();
+  var password = document.getElementById("password").value;
+
+  msg.className = "login-msg";
+  msg.textContent = "";
+
+  if (!window.sb) {
+    msg.className = "login-msg error";
+    msg.textContent = "Eroare de configurare. Verifica config.js (URL si key Supabase).";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Autentificare...";
+
+  try {
+    var result = await window.sb.auth.signInWithPassword({ email: email, password: password });
+    if (result.error) {
+      msg.className = "login-msg error";
+      msg.textContent = "Email sau parola invalida.";
+      btn.disabled = false;
+      btn.textContent = "Autentificare";
+      return;
+    }
+
+    // Verifica acces in tabela cc_useri_acces
+    var access = await window.sb
+      .from("cc_useri_acces")
+      .select("user_id, acces_central")
+      .eq("user_id", result.data.user.id)
+      .maybeSingle();
+
+    if (access.error || !access.data || !access.data.acces_central) {
+      msg.className = "login-msg error";
+      msg.textContent = "Nu ai acces la aceasta aplicatie. Contacteaza administratorul.";
+      await window.sb.auth.signOut();
+      btn.disabled = false;
+      btn.textContent = "Autentificare";
+      return;
+    }
+
+    msg.className = "login-msg success";
+    msg.textContent = "Autentificare reusita. Redirectionare...";
+    setTimeout(function() { window.location.href = "index.html"; }, 500);
+
+  } catch (e) {
+    console.error(e);
+    msg.className = "login-msg error";
+    msg.textContent = "Eroare neasteptata: " + e.message;
+    btn.disabled = false;
+    btn.textContent = "Autentificare";
+  }
+});
+</script>
+</body>
+</html>

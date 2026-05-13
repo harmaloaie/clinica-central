@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body>
@@ -25,7 +26,12 @@
     <nav class="topbar-tabs" role="tablist">
       <button class="topbar-tab active" data-view="cart" role="tab" aria-selected="true">Cerere analize</button>
       <button class="topbar-tab" data-view="browse" role="tab" aria-selected="false">Explorator preturi</button>
+      <button class="topbar-tab" data-view="istoric" role="tab" aria-selected="false">Istoric cereri</button>
     </nav>
+    <div class="topbar-user">
+      <span id="topbarUserEmail"></span>
+      <button class="topbar-logout-btn" id="btnLogout" title="Deconecteaza-te">Logout</button>
+    </div>
   </div>
 </header>
 
@@ -192,6 +198,59 @@
   </main>
 </div>
 
+<!-- ═════════════════════════════════════════════════════════════ -->
+<!-- VIEW 3: ISTORIC CERERI -->
+<!-- ═════════════════════════════════════════════════════════════ -->
+<div class="view" id="viewIstoric" style="display:none">
+  <main class="istoric-main">
+    <div class="istoric-header">
+      <div>
+        <div class="pane-label">Arhiva</div>
+        <h2 class="pane-title">Istoric cereri procesate</h2>
+        <p class="pane-sub">Toate cererile salvate in baza de date. Cauta dupa CNP sau filtreaza dupa data.</p>
+      </div>
+      <div class="istoric-header-actions">
+        <button type="button" class="istoric-btn-refresh" id="btnIstoricRefresh">&#8635; Reincarca</button>
+      </div>
+    </div>
+
+    <div class="istoric-filters">
+      <div class="istoric-filter">
+        <label for="istoricSearchCnp">Cauta CNP</label>
+        <input type="text" id="istoricSearchCnp" placeholder="13 cifre" inputmode="numeric" maxlength="13">
+      </div>
+      <div class="istoric-filter">
+        <label for="istoricFilterFrom">De la data</label>
+        <input type="date" id="istoricFilterFrom">
+      </div>
+      <div class="istoric-filter">
+        <label for="istoricFilterTo">Pana la data</label>
+        <input type="date" id="istoricFilterTo">
+      </div>
+      <button type="button" class="istoric-btn-clear" id="btnIstoricClearFilters">Reseteaza filtre</button>
+    </div>
+
+    <div class="istoric-stats" id="istoricStats"></div>
+
+    <div class="istoric-list" id="istoricList">
+      <div class="istoric-loading">Se incarca...</div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal vizualizare detaliata cerere din istoric -->
+<div class="modal-overlay" id="istoricDetailModal">
+  <div class="modal-box istoric-detail-box">
+    <button class="modal-close" id="istoricDetailClose" type="button" aria-label="Inchide">&times;</button>
+    <div class="modal-header">
+      <div class="modal-tag">Detalii cerere</div>
+      <h2 class="modal-title" id="istoricDetailTitle">Cerere</h2>
+      <div class="istoric-detail-meta" id="istoricDetailMeta"></div>
+    </div>
+    <div class="modal-body" id="istoricDetailBody"></div>
+  </div>
+</div>
+
 <!-- Details modal (shared) -->
 <div class="modal-overlay" id="detailsModal">
   <div class="modal-box">
@@ -272,9 +331,33 @@
   Clinica Central &bull; Preturi din listele publice &bull; Actualizat <strong>2026</strong> &bull; Verifica intotdeauna pretul direct la laborator
 </footer>
 
+<script src="assets/shared/config.js"></script>
+<script src="assets/shared/supabase-client.js"></script>
+<script src="assets/shared/auth.js"></script>
 <script>
-// Simple data loader — no encryption, no login
+// Bootstrap: auth check + data loader
 (async function(){
+  // 1. Require auth (redirects to login.html if not authenticated or no access)
+  var auth = await ClinicaAuth.requireAuth();
+  if (!auth) return;  // requireAuth already redirected
+
+  // Show user email in topbar
+  var userEmailEl = document.getElementById("topbarUserEmail");
+  if (userEmailEl) {
+    userEmailEl.textContent = auth.accesInfo.nume || auth.user.email;
+    userEmailEl.title = auth.user.email;
+  }
+  // Wire up logout
+  var logoutBtn = document.getElementById("btnLogout");
+  if (logoutBtn) logoutBtn.addEventListener("click", function() {
+    if (confirm("Sigur vrei sa te deconectezi?")) ClinicaAuth.logout();
+  });
+
+  // Store for use in app.js
+  window.__CURRENT_USER__ = auth.user;
+  window.__CURRENT_USER_INFO__ = auth.accesInfo;
+
+  // 2. Load data
   try {
     const [dataResp, santeResp, binisanResp, polianaResp, solomedResp, medilabResp] = await Promise.all([
       fetch("assets/data/analize.json"),
