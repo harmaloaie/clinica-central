@@ -421,9 +421,11 @@ function populateTelefonPrefixes() {
   var html = "";
   for (var i = 0; i < TELEFON_PREFIXES.length; i++) {
     var t = TELEFON_PREFIXES[i];
+    // Put country name FIRST so browser's type-to-search works
+    // (apesi "R" -> sare la prima cu R; "F" -> Franta; etc.)
     html += '<option value="' + esc(t.prefix) + '"' +
       (t.prefix === "+40" ? ' selected' : '') + '>' +
-      esc(t.prefix) + ' ' + esc(t.name) + '</option>';
+      esc(t.name) + ' (' + esc(t.prefix) + ')</option>';
   }
   telefonPrefixSelect.innerHTML = html;
 }
