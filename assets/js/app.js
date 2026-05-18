@@ -48,6 +48,22 @@ function normName(s) {
 }
 function fmtRon(n) { return Number(n).toLocaleString("ro-RO") + " RON"; }
 
+// Build a safe filename based on patient name + CNP + date
+function buildPatientFilename(prefix) {
+  var fullName = (cartState.prenume.trim() + "_" + cartState.nume.trim())
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // strip diacritics
+    .replace(/[^a-z0-9_]/g, "")
+    .substring(0, 40);
+  var date = new Date();
+  var dateStr = date.getFullYear() + "-" + String(date.getMonth()+1).padStart(2,"0") + "-" + String(date.getDate()).padStart(2,"0");
+  var parts = [prefix];
+  if (fullName) parts.push(fullName);
+  if (cartState.cnp) parts.push(cartState.cnp);
+  parts.push(dateStr);
+  return parts.join("_");
+}
+
 function getDetails(lab, denumire) {
   var map = DETAILS[lab];
   if (!map) return null;
@@ -143,8 +159,14 @@ function switchView(name) {
     t.setAttribute("aria-selected", isActive ? "true" : "false");
   }
   if (name === "cart") {
-    if (!cartState.cnpValid) cnpInput.focus();
-    else cartSearchInput.focus();
+    if (!cartState.pacientValid) {
+      // Focus first empty required field
+      if (!cartState.prenumeValid) prenumeInput.focus();
+      else if (!cartState.numeValid) numeInput.focus();
+      else cnpInput.focus();
+    } else {
+      cartSearchInput.focus();
+    }
   } else if (name === "browse") {
     document.getElementById("q").focus();
   } else if (name === "istoric") {
@@ -165,11 +187,30 @@ for (var i = 0; i < tabs.length; i++) {
 // ════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════
 
-var cartState = { cart: [], cnp: "", cnpValid: false };
+var cartState = {
+  cart: [],
+  // Patient fields
+  prenume: "",
+  nume: "",
+  cnp: "",
+  email: "",
+  telefonPrefix: "+40",
+  telefonNumar: "",
+  // Validation flags
+  prenumeValid: false,
+  numeValid: false,
+  cnpValid: false,
+  pacientValid: false  // true when all required fields are valid
+};
 
 var cnpInput = document.getElementById("cnpInput");
 var cnpStatus = document.getElementById("cnpStatus");
 var cnpError = document.getElementById("cnpError");
+var prenumeInput = document.getElementById("pacientPrenume");
+var numeInput = document.getElementById("pacientNume");
+var emailInput = document.getElementById("pacientEmail");
+var telefonPrefixSelect = document.getElementById("pacientTelefonPrefix");
+var telefonNumarInput = document.getElementById("pacientTelefonNumar");
 var cartSearchInput = document.getElementById("cartSearchInput");
 var cartSuggestionsEl = document.getElementById("cartSuggestions");
 var cartEmptyHintEl = document.getElementById("cartEmptyHint");
@@ -179,9 +220,243 @@ var cartTotalEl = document.getElementById("cartTotal");
 var cartEmptyEl = document.getElementById("cartEmpty");
 var btnProcess = document.getElementById("btnProcess");
 
-// ─── CNP ───
-function isCnpValid(s) { return /^\d{13}$/.test(s); }
+// ─── Lista prefixe telefon (tari sortate alfabetic, RO primul) ───
+var TELEFON_PREFIXES = [
+  { code: "RO", prefix: "+40", name: "Romania" },
+  // Restul sortate alfabetic dupa nume
+  { code: "AF", prefix: "+93", name: "Afganistan" },
+  { code: "AL", prefix: "+355", name: "Albania" },
+  { code: "DZ", prefix: "+213", name: "Algeria" },
+  { code: "AD", prefix: "+376", name: "Andorra" },
+  { code: "AO", prefix: "+244", name: "Angola" },
+  { code: "AR", prefix: "+54", name: "Argentina" },
+  { code: "AM", prefix: "+374", name: "Armenia" },
+  { code: "AU", prefix: "+61", name: "Australia" },
+  { code: "AT", prefix: "+43", name: "Austria" },
+  { code: "AZ", prefix: "+994", name: "Azerbaidjan" },
+  { code: "BH", prefix: "+973", name: "Bahrain" },
+  { code: "BD", prefix: "+880", name: "Bangladesh" },
+  { code: "BY", prefix: "+375", name: "Belarus" },
+  { code: "BE", prefix: "+32", name: "Belgia" },
+  { code: "BZ", prefix: "+501", name: "Belize" },
+  { code: "BJ", prefix: "+229", name: "Benin" },
+  { code: "BO", prefix: "+591", name: "Bolivia" },
+  { code: "BA", prefix: "+387", name: "Bosnia si Hertegovina" },
+  { code: "BW", prefix: "+267", name: "Botswana" },
+  { code: "BR", prefix: "+55", name: "Brazilia" },
+  { code: "BN", prefix: "+673", name: "Brunei" },
+  { code: "BG", prefix: "+359", name: "Bulgaria" },
+  { code: "BF", prefix: "+226", name: "Burkina Faso" },
+  { code: "BI", prefix: "+257", name: "Burundi" },
+  { code: "BT", prefix: "+975", name: "Bhutan" },
+  { code: "KH", prefix: "+855", name: "Cambodgia" },
+  { code: "CM", prefix: "+237", name: "Camerun" },
+  { code: "CA", prefix: "+1", name: "Canada" },
+  { code: "CV", prefix: "+238", name: "Cape Verde" },
+  { code: "TD", prefix: "+235", name: "Ciad" },
+  { code: "CL", prefix: "+56", name: "Chile" },
+  { code: "CN", prefix: "+86", name: "China" },
+  { code: "CY", prefix: "+357", name: "Cipru" },
+  { code: "CO", prefix: "+57", name: "Columbia" },
+  { code: "KM", prefix: "+269", name: "Comore" },
+  { code: "CG", prefix: "+242", name: "Congo" },
+  { code: "CD", prefix: "+243", name: "Congo (RDC)" },
+  { code: "KP", prefix: "+850", name: "Coreea de Nord" },
+  { code: "KR", prefix: "+82", name: "Coreea de Sud" },
+  { code: "CR", prefix: "+506", name: "Costa Rica" },
+  { code: "CI", prefix: "+225", name: "Coasta de Fildes" },
+  { code: "HR", prefix: "+385", name: "Croatia" },
+  { code: "CU", prefix: "+53", name: "Cuba" },
+  { code: "DK", prefix: "+45", name: "Danemarca" },
+  { code: "DJ", prefix: "+253", name: "Djibouti" },
+  { code: "DM", prefix: "+1767", name: "Dominica" },
+  { code: "DO", prefix: "+1809", name: "Republica Dominicana" },
+  { code: "EC", prefix: "+593", name: "Ecuador" },
+  { code: "EG", prefix: "+20", name: "Egipt" },
+  { code: "SV", prefix: "+503", name: "El Salvador" },
+  { code: "AE", prefix: "+971", name: "Emiratele Arabe Unite" },
+  { code: "ER", prefix: "+291", name: "Eritreea" },
+  { code: "EE", prefix: "+372", name: "Estonia" },
+  { code: "ET", prefix: "+251", name: "Etiopia" },
+  { code: "FJ", prefix: "+679", name: "Fiji" },
+  { code: "PH", prefix: "+63", name: "Filipine" },
+  { code: "FI", prefix: "+358", name: "Finlanda" },
+  { code: "FR", prefix: "+33", name: "Franta" },
+  { code: "GA", prefix: "+241", name: "Gabon" },
+  { code: "GM", prefix: "+220", name: "Gambia" },
+  { code: "GE", prefix: "+995", name: "Georgia" },
+  { code: "DE", prefix: "+49", name: "Germania" },
+  { code: "GH", prefix: "+233", name: "Ghana" },
+  { code: "GR", prefix: "+30", name: "Grecia" },
+  { code: "GD", prefix: "+1473", name: "Grenada" },
+  { code: "GT", prefix: "+502", name: "Guatemala" },
+  { code: "GN", prefix: "+224", name: "Guineea" },
+  { code: "GW", prefix: "+245", name: "Guineea-Bissau" },
+  { code: "GQ", prefix: "+240", name: "Guineea Ecuatoriala" },
+  { code: "GY", prefix: "+592", name: "Guyana" },
+  { code: "HT", prefix: "+509", name: "Haiti" },
+  { code: "HN", prefix: "+504", name: "Honduras" },
+  { code: "IN", prefix: "+91", name: "India" },
+  { code: "ID", prefix: "+62", name: "Indonezia" },
+  { code: "IQ", prefix: "+964", name: "Irak" },
+  { code: "IR", prefix: "+98", name: "Iran" },
+  { code: "IE", prefix: "+353", name: "Irlanda" },
+  { code: "IS", prefix: "+354", name: "Islanda" },
+  { code: "IL", prefix: "+972", name: "Israel" },
+  { code: "IT", prefix: "+39", name: "Italia" },
+  { code: "JM", prefix: "+1876", name: "Jamaica" },
+  { code: "JP", prefix: "+81", name: "Japonia" },
+  { code: "JO", prefix: "+962", name: "Iordania" },
+  { code: "KZ", prefix: "+7", name: "Kazahstan" },
+  { code: "KE", prefix: "+254", name: "Kenya" },
+  { code: "KG", prefix: "+996", name: "Kirghistan" },
+  { code: "KI", prefix: "+686", name: "Kiribati" },
+  { code: "KW", prefix: "+965", name: "Kuwait" },
+  { code: "LA", prefix: "+856", name: "Laos" },
+  { code: "LS", prefix: "+266", name: "Lesotho" },
+  { code: "LV", prefix: "+371", name: "Letonia" },
+  { code: "LB", prefix: "+961", name: "Liban" },
+  { code: "LR", prefix: "+231", name: "Liberia" },
+  { code: "LY", prefix: "+218", name: "Libia" },
+  { code: "LI", prefix: "+423", name: "Liechtenstein" },
+  { code: "LT", prefix: "+370", name: "Lituania" },
+  { code: "LU", prefix: "+352", name: "Luxemburg" },
+  { code: "MK", prefix: "+389", name: "Macedonia" },
+  { code: "MG", prefix: "+261", name: "Madagascar" },
+  { code: "MY", prefix: "+60", name: "Malaezia" },
+  { code: "MW", prefix: "+265", name: "Malawi" },
+  { code: "MV", prefix: "+960", name: "Maldive" },
+  { code: "ML", prefix: "+223", name: "Mali" },
+  { code: "MT", prefix: "+356", name: "Malta" },
+  { code: "MA", prefix: "+212", name: "Maroc" },
+  { code: "MH", prefix: "+692", name: "Insulele Marshall" },
+  { code: "MR", prefix: "+222", name: "Mauritania" },
+  { code: "MU", prefix: "+230", name: "Mauritius" },
+  { code: "MX", prefix: "+52", name: "Mexic" },
+  { code: "FM", prefix: "+691", name: "Micronezia" },
+  { code: "MD", prefix: "+373", name: "Moldova" },
+  { code: "MC", prefix: "+377", name: "Monaco" },
+  { code: "MN", prefix: "+976", name: "Mongolia" },
+  { code: "ME", prefix: "+382", name: "Muntenegru" },
+  { code: "MZ", prefix: "+258", name: "Mozambic" },
+  { code: "MM", prefix: "+95", name: "Myanmar" },
+  { code: "NA", prefix: "+264", name: "Namibia" },
+  { code: "NR", prefix: "+674", name: "Nauru" },
+  { code: "NP", prefix: "+977", name: "Nepal" },
+  { code: "NI", prefix: "+505", name: "Nicaragua" },
+  { code: "NE", prefix: "+227", name: "Niger" },
+  { code: "NG", prefix: "+234", name: "Nigeria" },
+  { code: "NO", prefix: "+47", name: "Norvegia" },
+  { code: "NZ", prefix: "+64", name: "Noua Zeelanda" },
+  { code: "NL", prefix: "+31", name: "Olanda" },
+  { code: "OM", prefix: "+968", name: "Oman" },
+  { code: "PK", prefix: "+92", name: "Pakistan" },
+  { code: "PW", prefix: "+680", name: "Palau" },
+  { code: "PS", prefix: "+970", name: "Palestina" },
+  { code: "PA", prefix: "+507", name: "Panama" },
+  { code: "PG", prefix: "+675", name: "Papua Noua Guinee" },
+  { code: "PY", prefix: "+595", name: "Paraguay" },
+  { code: "PE", prefix: "+51", name: "Peru" },
+  { code: "PL", prefix: "+48", name: "Polonia" },
+  { code: "PT", prefix: "+351", name: "Portugalia" },
+  { code: "QA", prefix: "+974", name: "Qatar" },
+  { code: "GB", prefix: "+44", name: "Regatul Unit" },
+  { code: "CZ", prefix: "+420", name: "Cehia" },
+  { code: "CF", prefix: "+236", name: "Republica Centrafricana" },
+  { code: "RU", prefix: "+7", name: "Rusia" },
+  { code: "RW", prefix: "+250", name: "Rwanda" },
+  { code: "KN", prefix: "+1869", name: "Saint Kitts si Nevis" },
+  { code: "LC", prefix: "+1758", name: "Saint Lucia" },
+  { code: "VC", prefix: "+1784", name: "Saint Vincent" },
+  { code: "WS", prefix: "+685", name: "Samoa" },
+  { code: "SM", prefix: "+378", name: "San Marino" },
+  { code: "ST", prefix: "+239", name: "Sao Tome si Principe" },
+  { code: "SA", prefix: "+966", name: "Arabia Saudita" },
+  { code: "SN", prefix: "+221", name: "Senegal" },
+  { code: "RS", prefix: "+381", name: "Serbia" },
+  { code: "SC", prefix: "+248", name: "Seychelles" },
+  { code: "SL", prefix: "+232", name: "Sierra Leone" },
+  { code: "SG", prefix: "+65", name: "Singapore" },
+  { code: "SK", prefix: "+421", name: "Slovacia" },
+  { code: "SI", prefix: "+386", name: "Slovenia" },
+  { code: "SB", prefix: "+677", name: "Insulele Solomon" },
+  { code: "SO", prefix: "+252", name: "Somalia" },
+  { code: "ES", prefix: "+34", name: "Spania" },
+  { code: "LK", prefix: "+94", name: "Sri Lanka" },
+  { code: "SD", prefix: "+249", name: "Sudan" },
+  { code: "SS", prefix: "+211", name: "Sudanul de Sud" },
+  { code: "SE", prefix: "+46", name: "Suedia" },
+  { code: "CH", prefix: "+41", name: "Elvetia" },
+  { code: "SR", prefix: "+597", name: "Surinam" },
+  { code: "SZ", prefix: "+268", name: "Eswatini" },
+  { code: "SY", prefix: "+963", name: "Siria" },
+  { code: "TJ", prefix: "+992", name: "Tadjikistan" },
+  { code: "TZ", prefix: "+255", name: "Tanzania" },
+  { code: "TH", prefix: "+66", name: "Thailanda" },
+  { code: "TL", prefix: "+670", name: "Timorul de Est" },
+  { code: "TG", prefix: "+228", name: "Togo" },
+  { code: "TO", prefix: "+676", name: "Tonga" },
+  { code: "TT", prefix: "+1868", name: "Trinidad si Tobago" },
+  { code: "TN", prefix: "+216", name: "Tunisia" },
+  { code: "TR", prefix: "+90", name: "Turcia" },
+  { code: "TM", prefix: "+993", name: "Turkmenistan" },
+  { code: "TV", prefix: "+688", name: "Tuvalu" },
+  { code: "UA", prefix: "+380", name: "Ucraina" },
+  { code: "UG", prefix: "+256", name: "Uganda" },
+  { code: "HU", prefix: "+36", name: "Ungaria" },
+  { code: "UY", prefix: "+598", name: "Uruguay" },
+  { code: "US", prefix: "+1", name: "Statele Unite" },
+  { code: "UZ", prefix: "+998", name: "Uzbekistan" },
+  { code: "VU", prefix: "+678", name: "Vanuatu" },
+  { code: "VA", prefix: "+39", name: "Vatican" },
+  { code: "VE", prefix: "+58", name: "Venezuela" },
+  { code: "VN", prefix: "+84", name: "Vietnam" },
+  { code: "YE", prefix: "+967", name: "Yemen" },
+  { code: "ZM", prefix: "+260", name: "Zambia" },
+  { code: "ZW", prefix: "+263", name: "Zimbabwe" }
+];
 
+function populateTelefonPrefixes() {
+  // First entry: Romania (already first in list)
+  var html = "";
+  for (var i = 0; i < TELEFON_PREFIXES.length; i++) {
+    var t = TELEFON_PREFIXES[i];
+    html += '<option value="' + esc(t.prefix) + '" data-country="' + esc(t.code) + '"' +
+      (t.prefix === "+40" ? ' selected' : '') + '>' +
+      esc(t.prefix) + ' ' + esc(t.name) + '</option>';
+  }
+  telefonPrefixSelect.innerHTML = html;
+}
+populateTelefonPrefixes();
+
+// ─── Validation helpers ───
+function isCnpValid(s) { return /^\d{13}$/.test(s); }
+function isEmailValid(s) { return s === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
+
+function updatePacientValidation() {
+  cartState.prenumeValid = cartState.prenume.trim().length >= 2;
+  cartState.numeValid = cartState.nume.trim().length >= 2;
+  cartState.cnpValid = isCnpValid(cartState.cnp);
+  // Email and phone are optional, but if filled, email should be valid
+  var emailOk = cartState.email === "" || isEmailValid(cartState.email);
+
+  cartState.pacientValid =
+    cartState.prenumeValid && cartState.numeValid && cartState.cnpValid && emailOk;
+
+  cartSearchInput.disabled = !cartState.pacientValid;
+  if (cartState.pacientValid) {
+    cartSearchInput.placeholder = "Ex: TSH, hemoleucograma, vitamina D...";
+  } else {
+    cartSearchInput.placeholder = "Completeaza datele pacientului mai sus...";
+    if (cartSearchInput.value) {
+      cartSearchInput.value = "";
+      cartSuggestionsEl.classList.remove("visible");
+      cartEmptyHintEl.style.display = "block";
+    }
+  }
+}
+
+// ─── CNP ───
 function updateCnpUi() {
   var raw = cnpInput.value;
   var digits = raw.replace(/\D/g, "").slice(0, 13);
@@ -205,22 +480,57 @@ function updateCnpUi() {
     cnpStatus.classList.add("valid");
     cnpStatus.textContent = "\u2713";
   }
-
-  cartState.cnpValid = isCnpValid(digits);
-  cartSearchInput.disabled = !cartState.cnpValid;
-  if (cartState.cnpValid) {
-    cartSearchInput.placeholder = "Ex: TSH, hemoleucograma, vitamina D...";
-  } else {
-    cartSearchInput.placeholder = "Introdu CNP-ul mai intai...";
-    if (cartSearchInput.value) {
-      cartSearchInput.value = "";
-      cartSuggestionsEl.classList.remove("visible");
-      cartEmptyHintEl.style.display = "block";
-    }
-  }
+  updatePacientValidation();
 }
 cnpInput.addEventListener("input", updateCnpUi);
 cnpInput.addEventListener("blur", updateCnpUi);
+
+// ─── Other patient fields ───
+function updateNumeField(input, stateKey, validKey) {
+  var v = input.value;
+  // Allow letters (incl Romanian diacritics), spaces, hyphens, apostrophes
+  // We don't strip — let the user type, just validate
+  var trimmed = v.trim();
+  cartState[stateKey] = v;
+  input.classList.remove("valid", "invalid");
+  if (trimmed.length === 0) {
+    // neutral
+  } else if (trimmed.length < 2) {
+    input.classList.add("invalid");
+  } else {
+    input.classList.add("valid");
+  }
+  updatePacientValidation();
+}
+
+prenumeInput.addEventListener("input", function() { updateNumeField(prenumeInput, "prenume"); });
+prenumeInput.addEventListener("blur", function() { updateNumeField(prenumeInput, "prenume"); });
+numeInput.addEventListener("input", function() { updateNumeField(numeInput, "nume"); });
+numeInput.addEventListener("blur", function() { updateNumeField(numeInput, "nume"); });
+
+emailInput.addEventListener("input", function() {
+  var v = emailInput.value.trim();
+  cartState.email = v;
+  emailInput.classList.remove("valid", "invalid");
+  if (v.length === 0) {
+    // neutral - email is optional
+  } else if (isEmailValid(v)) {
+    emailInput.classList.add("valid");
+  } else {
+    emailInput.classList.add("invalid");
+  }
+  updatePacientValidation();
+});
+
+telefonPrefixSelect.addEventListener("change", function() {
+  cartState.telefonPrefix = telefonPrefixSelect.value;
+});
+telefonNumarInput.addEventListener("input", function() {
+  // Strip everything except digits and spaces
+  var v = telefonNumarInput.value.replace(/[^\d\s]/g, '');
+  if (v !== telefonNumarInput.value) telefonNumarInput.value = v;
+  cartState.telefonNumar = v.trim();
+});
 
 // ─── Cart search ───
 function doCartSearch() {
@@ -515,8 +825,18 @@ function openReport() {
   statsHtml += '<div class="report-stat"><span class="report-stat-num">' + (r.grandListTotal - r.grandTotal) + '</span><span class="report-stat-label">RON economisiti</span></div>';
   document.getElementById("reportStats").innerHTML = statsHtml;
 
-  document.getElementById("reportPatient").innerHTML =
-    '<span class="label">Pacient CNP</span><strong>' + esc(cartState.cnp) + '</strong>';
+  // Patient info header
+  var fullName = [cartState.prenume.trim(), cartState.nume.trim()].filter(Boolean).join(" ");
+  var patientHtml = '';
+  patientHtml += '<div class="report-patient-row"><span class="label">Pacient</span><strong>' + esc(fullName) + '</strong></div>';
+  patientHtml += '<div class="report-patient-row"><span class="label">CNP</span><strong>' + esc(cartState.cnp) + '</strong></div>';
+  if (cartState.email) {
+    patientHtml += '<div class="report-patient-row"><span class="label">Email</span><strong>' + esc(cartState.email) + '</strong></div>';
+  }
+  if (cartState.telefonNumar) {
+    patientHtml += '<div class="report-patient-row"><span class="label">Telefon</span><strong>' + esc(cartState.telefonPrefix + " " + cartState.telefonNumar) + '</strong></div>';
+  }
+  document.getElementById("reportPatient").innerHTML = patientHtml;
 
   var body = '';
 
@@ -619,9 +939,17 @@ function closeReport() {
 }
 
 function exportReportXlsx(r) {
+  var fullName = [cartState.prenume.trim(), cartState.nume.trim()].filter(Boolean).join(" ");
   var rows = [];
   rows.push({ "Laborator": "CERERE ANALIZE" });
-  rows.push({ "Laborator": "CNP pacient:", "Denumire Analiza": cartState.cnp });
+  rows.push({ "Laborator": "Pacient:", "Denumire Analiza": fullName });
+  rows.push({ "Laborator": "CNP:", "Denumire Analiza": cartState.cnp });
+  if (cartState.email) {
+    rows.push({ "Laborator": "Email:", "Denumire Analiza": cartState.email });
+  }
+  if (cartState.telefonNumar) {
+    rows.push({ "Laborator": "Telefon:", "Denumire Analiza": cartState.telefonPrefix + " " + cartState.telefonNumar });
+  }
   rows.push({ "Laborator": "Data generare:", "Denumire Analiza": new Date().toLocaleString("ro-RO") });
   rows.push({});
   for (var g = 0; g < r.groups.length; g++) {
@@ -630,6 +958,7 @@ function exportReportXlsx(r) {
       var it = grp.items[i];
       var d = getDetails(grp.lab, it.displayName);
       rows.push({
+        "Pacient": fullName,
         "CNP pacient": cartState.cnp,
         "Laborator": grp.lab,
         "Denumire Analiza": it.displayName,
@@ -645,13 +974,13 @@ function exportReportXlsx(r) {
         "Economie (RON)": it.offer.Pret - it.finalPrice
       });
     }
-    rows.push({ "CNP pacient": "", "Laborator": grp.lab + " — Subtotal", "Denumire Analiza": "", "Eprubeta / Recipient": "", "Material biologic": "", "Cantitate": "", "Se trimite la": "", "Observatii": "", "Timp Executie": "", "Pret Lista (RON)": grp.listTotal, "Discount (%)": "", "Pret Final (RON)": grp.total, "Economie (RON)": grp.listTotal - grp.total });
+    rows.push({ "Pacient": "", "CNP pacient": "", "Laborator": grp.lab + " — Subtotal", "Denumire Analiza": "", "Eprubeta / Recipient": "", "Material biologic": "", "Cantitate": "", "Se trimite la": "", "Observatii": "", "Timp Executie": "", "Pret Lista (RON)": grp.listTotal, "Discount (%)": "", "Pret Final (RON)": grp.total, "Economie (RON)": grp.listTotal - grp.total });
     rows.push({});
   }
-  rows.push({ "CNP pacient": "", "Laborator": "TOTAL GENERAL", "Denumire Analiza": "", "Eprubeta / Recipient": "", "Material biologic": "", "Cantitate": "", "Se trimite la": "", "Observatii": "", "Timp Executie": "", "Pret Lista (RON)": r.grandListTotal, "Discount (%)": "", "Pret Final (RON)": r.grandTotal, "Economie (RON)": r.grandListTotal - r.grandTotal });
+  rows.push({ "Pacient": "", "CNP pacient": "", "Laborator": "TOTAL GENERAL", "Denumire Analiza": "", "Eprubeta / Recipient": "", "Material biologic": "", "Cantitate": "", "Se trimite la": "", "Observatii": "", "Timp Executie": "", "Pret Lista (RON)": r.grandListTotal, "Discount (%)": "", "Pret Final (RON)": r.grandTotal, "Economie (RON)": r.grandListTotal - r.grandTotal });
 
   var ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [{wch:15},{wch:22},{wch:45},{wch:34},{wch:18},{wch:14},{wch:28},{wch:40},{wch:18},{wch:14},{wch:10},{wch:14},{wch:12}];
+  ws["!cols"] = [{wch:22},{wch:15},{wch:22},{wch:45},{wch:34},{wch:18},{wch:14},{wch:28},{wch:40},{wch:18},{wch:14},{wch:10},{wch:14},{wch:12}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Cerere analize");
 
@@ -660,7 +989,8 @@ function exportReportXlsx(r) {
   if (eprubeteForExcel.length > 0) {
     var eRows = [];
     eRows.push({ "Tip eprubeta": "REZUMAT EPRUBETE NECESARE" });
-    eRows.push({ "Tip eprubeta": "CNP pacient:", "Total bucati": cartState.cnp });
+    eRows.push({ "Tip eprubeta": "Pacient:", "Total bucati": fullName });
+    eRows.push({ "Tip eprubeta": "CNP:", "Total bucati": cartState.cnp });
     eRows.push({});
     var totalTubes = 0;
     for (var s = 0; s < eprubeteForExcel.length; s++) {
@@ -688,7 +1018,7 @@ function exportReportXlsx(r) {
   }
 
   var date = new Date();
-  var fn = "cerere_analize_" + cartState.cnp + "_" + date.getFullYear() + "-" + String(date.getMonth()+1).padStart(2,"0") + "-" + String(date.getDate()).padStart(2,"0") + ".xlsx";
+  var fn = buildPatientFilename("cerere_analize") + ".xlsx";
   XLSX.writeFile(wb, fn);
 }
 
@@ -702,8 +1032,22 @@ function exportReportJson(r) {
     };
   });
   var totalEprubete = eprubeteForJson.reduce(function(sum, e){ return sum + e.bucati; }, 0);
+  var fullName = [cartState.prenume.trim(), cartState.nume.trim()].filter(Boolean).join(" ");
   var out = {
     generatedAt: now.toISOString(),
+    pacient: {
+      prenume: cartState.prenume.trim(),
+      nume: cartState.nume.trim(),
+      numeComplet: fullName,
+      cnp: cartState.cnp,
+      email: cartState.email || null,
+      telefon: cartState.telefonNumar ? {
+        prefix: cartState.telefonPrefix,
+        numar: cartState.telefonNumar,
+        complet: cartState.telefonPrefix + " " + cartState.telefonNumar
+      } : null
+    },
+    // Backwards compat
     cnpPacient: cartState.cnp,
     summary: {
       totalAnalize: r.items.length,
@@ -754,7 +1098,7 @@ function exportReportJson(r) {
   var url = URL.createObjectURL(blob);
   var a = document.createElement("a");
   a.href = url;
-  a.download = "cerere_analize_" + cartState.cnp + "_" + now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0") + "-" + String(now.getDate()).padStart(2,"0") + ".json";
+  a.download = buildPatientFilename("cerere_analize") + ".json";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1118,15 +1462,19 @@ function showScanError(msg) {
 
 async function extractFromImage(base64Data, mediaType) {
   var prompt = "Analizeaza acest bilet de trimitere medical romanesc (CAS). Extrage:\n\n" +
-    "1. **CNP-ul pacientului** (13 cifre) — cauta in campul 'CID/CNP/CE/PASS'\n" +
-    "2. **Lista analizelor medicale** recomandate (coloana 'Investigatii recomandate')\n\n" +
+    "1. **Numele si prenumele pacientului** — cauta in campul 'Nume si Prenume' sau similar\n" +
+    "2. **CNP-ul pacientului** (13 cifre) — cauta in campul 'CID/CNP/CE/PASS'\n" +
+    "3. **Lista analizelor medicale** recomandate (coloana 'Investigatii recomandate')\n\n" +
     "Pentru fiecare analiza, returneaza EXACT textul asa cum e scris pe bilet (chiar daca are typo-uri sau abrevieri).\n\n" +
+    "Pentru nume/prenume: pe bilete romanesti de obicei ordinea este NUME PRENUME (familie, apoi prenume). Daca poti distinge clar, separa-le. Daca nu esti sigur, lasa pe null.\n\n" +
     "Raspunde DOAR cu JSON valid, fara alte comentarii, fara code blocks. Format:\n" +
     "{\n" +
+    '  "nume": "string sau null",\n' +
+    '  "prenume": "string sau null",\n' +
     '  "cnp": "string 13 cifre sau null daca nu e clar",\n' +
     '  "analize": ["denumire analiza 1", "denumire analiza 2", ...]\n' +
     "}\n\n" +
-    "Daca biletul nu e lizibil sau nu e un bilet medical, returneaza { \"cnp\": null, \"analize\": [] }.";
+    "Daca biletul nu e lizibil sau nu e un bilet medical, returneaza { \"nume\": null, \"prenume\": null, \"cnp\": null, \"analize\": [] }.";
 
   var response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1156,7 +1504,6 @@ async function extractFromImage(base64Data, mediaType) {
   if (!textBlocks.length) throw new Error("Raspuns gol de la API");
 
   var responseText = textBlocks.map(function(b){ return b.text; }).join("\n").trim();
-  // Strip code fences if Claude added them anyway
   responseText = responseText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
 
   var parsed;
@@ -1171,6 +1518,8 @@ async function extractFromImage(base64Data, mediaType) {
   }
 
   return {
+    nume: parsed.nume || null,
+    prenume: parsed.prenume || null,
     cnp: parsed.cnp || null,
     analize: parsed.analize
   };
@@ -1240,6 +1589,10 @@ function showScanResults(extracted) {
 
   // Summary
   var summaryHtml = '';
+  if (extracted.prenume || extracted.nume) {
+    var fullName = [extracted.prenume, extracted.nume].filter(Boolean).join(" ");
+    summaryHtml += '<div class="scan-result-cnp"><span class="label">Pacient</span><strong>' + esc(fullName) + '</strong></div>';
+  }
   if (extracted.cnp && /^\d{13}$/.test(extracted.cnp)) {
     summaryHtml += '<div class="scan-result-cnp"><span class="label">CNP detectat</span><strong>' + esc(extracted.cnp) + '</strong></div>';
   }
@@ -1301,6 +1654,8 @@ function showScanResults(extracted) {
   // Store matched for adding later
   window.__scanMatched = matched;
   window.__scanCnp = extracted.cnp;
+  window.__scanNume = extracted.nume;
+  window.__scanPrenume = extracted.prenume;
 
   // Wire up checkboxes
   var checks = document.querySelectorAll("#scanMatchedList .scan-item-check");
@@ -1321,6 +1676,15 @@ function showScanResults(extracted) {
   var addBtn = document.getElementById("btnAddAllScan");
   if (addBtn) {
     addBtn.addEventListener("click", function() {
+      // Pre-populate name fields if detected (only if currently empty)
+      if (window.__scanPrenume && !prenumeInput.value.trim()) {
+        prenumeInput.value = window.__scanPrenume;
+        updateNumeField(prenumeInput, "prenume");
+      }
+      if (window.__scanNume && !numeInput.value.trim()) {
+        numeInput.value = window.__scanNume;
+        updateNumeField(numeInput, "nume");
+      }
       // Pre-populate CNP if detected
       if (window.__scanCnp && /^\d{13}$/.test(window.__scanCnp)) {
         cnpInput.value = window.__scanCnp;
@@ -1393,7 +1757,7 @@ document.getElementById("detailsModal").addEventListener("click", function(e) {
 // ════════════════════════════════════════════════════════════════
 updateCnpUi();
 renderCart();
-cnpInput.focus();
+prenumeInput.focus();
 
 
 // ════════════════════════════════════════════════════════════════
@@ -1413,6 +1777,11 @@ async function saveCerere(r) {
 
   var payload = {
     cnp_pacient: cartState.cnp,
+    pacient_prenume: cartState.prenume.trim(),
+    pacient_nume: cartState.nume.trim(),
+    pacient_email: cartState.email.trim() || null,
+    pacient_telefon_prefix: cartState.telefonNumar ? cartState.telefonPrefix : null,
+    pacient_telefon_numar: cartState.telefonNumar.trim() || null,
     user_id: window.__CURRENT_USER__.id,
     user_email: window.__CURRENT_USER__.email,
     numar_analize: r.items.length,
@@ -1541,7 +1910,14 @@ function renderIstoric() {
 
   // Apply filters
   var filtered = istoricState.cereri.filter(function(c) {
-    if (istoricState.filterCnp && c.cnp_pacient.indexOf(istoricState.filterCnp) === -1) return false;
+    if (istoricState.filterCnp) {
+      // Search by CNP digits OR by name (case-insensitive substring)
+      var q = istoricState.filterCnp.toLowerCase();
+      var matchCnp = c.cnp_pacient && c.cnp_pacient.indexOf(istoricState.filterCnp) !== -1;
+      var fullName = ((c.pacient_prenume || "") + " " + (c.pacient_nume || "")).toLowerCase();
+      var matchName = fullName.indexOf(q) !== -1;
+      if (!matchCnp && !matchName) return false;
+    }
     if (istoricState.filterFrom) {
       var d = new Date(c.created_at);
       var from = new Date(istoricState.filterFrom + "T00:00:00");
@@ -1581,9 +1957,15 @@ function renderIstoric() {
     var c = filtered[i];
     var date = new Date(c.created_at);
     var dateStr = date.toLocaleString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    // Build patient name from columns (or fallback to CNP only if old data)
+    var fullName = [c.pacient_prenume, c.pacient_nume].filter(Boolean).join(" ").trim();
     html += '<div class="istoric-row" data-id="' + esc(c.id) + '">';
     html += '<div class="istoric-row-main">';
-    html += '<div class="istoric-row-cnp">' + esc(c.cnp_pacient) + '</div>';
+    if (fullName) {
+      html += '<div class="istoric-row-cnp">' + esc(fullName) + ' <small style="font-family:monospace;font-weight:400;color:rgba(15,17,23,0.5)">(' + esc(c.cnp_pacient) + ')</small></div>';
+    } else {
+      html += '<div class="istoric-row-cnp">' + esc(c.cnp_pacient) + '</div>';
+    }
     html += '<div class="istoric-row-meta">';
     html += '<span>' + esc(dateStr) + '</span>';
     html += '<span>' + c.numar_analize + ' analize</span>';
@@ -1616,12 +1998,25 @@ function showIstoricDetail(id) {
   var meta = document.getElementById("istoricDetailMeta");
   var body = document.getElementById("istoricDetailBody");
 
-  title.textContent = "CNP " + c.cnp_pacient;
+  var fullName = [c.pacient_prenume, c.pacient_nume].filter(Boolean).join(" ").trim();
+  title.textContent = fullName || ("CNP " + c.cnp_pacient);
   var dateStr = new Date(c.created_at).toLocaleString("ro-RO");
-  meta.innerHTML =
-    '<div class="istoric-detail-meta-row"><span>Procesat la:</span><strong>' + esc(dateStr) + '</strong></div>' +
-    (c.user_email ? '<div class="istoric-detail-meta-row"><span>De catre:</span><strong>' + esc(c.user_email) + '</strong></div>' : '') +
-    '<div class="istoric-detail-meta-row"><span>Total:</span><strong>' + Math.round(c.total_final_ron) + ' RON</strong> (economie: ' + Math.round(c.economie_ron) + ' RON)</div>';
+
+  var metaHtml = '';
+  metaHtml += '<div class="istoric-detail-meta-row"><span>CNP:</span><strong>' + esc(c.cnp_pacient) + '</strong></div>';
+  if (c.pacient_email) {
+    metaHtml += '<div class="istoric-detail-meta-row"><span>Email:</span><strong>' + esc(c.pacient_email) + '</strong></div>';
+  }
+  if (c.pacient_telefon_numar) {
+    var tel = (c.pacient_telefon_prefix || "") + " " + c.pacient_telefon_numar;
+    metaHtml += '<div class="istoric-detail-meta-row"><span>Telefon:</span><strong>' + esc(tel.trim()) + '</strong></div>';
+  }
+  metaHtml += '<div class="istoric-detail-meta-row"><span>Procesat la:</span><strong>' + esc(dateStr) + '</strong></div>';
+  if (c.user_email) {
+    metaHtml += '<div class="istoric-detail-meta-row"><span>De catre:</span><strong>' + esc(c.user_email) + '</strong></div>';
+  }
+  metaHtml += '<div class="istoric-detail-meta-row"><span>Total:</span><strong>' + Math.round(c.total_final_ron) + ' RON</strong> (economie: ' + Math.round(c.economie_ron) + ' RON)</div>';
+  meta.innerHTML = metaHtml;
 
   // Body — show groups + items
   var html = '';
@@ -1677,7 +2072,8 @@ document.getElementById("istoricDetailModal").addEventListener("click", function
 });
 
 document.getElementById("istoricSearchCnp").addEventListener("input", function(e) {
-  istoricState.filterCnp = e.target.value.replace(/\D/g, '');
+  // Accept any input (digits for CNP, letters for name)
+  istoricState.filterCnp = e.target.value.trim();
   if (istoricState.loaded) renderIstoric();
 });
 document.getElementById("istoricFilterFrom").addEventListener("change", function(e) {
