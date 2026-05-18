@@ -785,7 +785,10 @@ document.getElementById("reportOverlay").addEventListener("click", function(e) {
 });
 document.addEventListener("keydown", function(e) {
   if (e.key === "Escape") {
-    closeReport();
+    // Only close (and reset) if report is actually visible
+    if (document.getElementById("reportOverlay").classList.contains("visible")) {
+      closeReport();
+    }
     closeDetailsModal();
   }
 });
@@ -939,6 +942,45 @@ function openReport() {
 function closeReport() {
   document.getElementById("reportOverlay").classList.remove("visible");
   document.body.style.overflow = "";
+
+  // Reset complet — start fresh pentru urmatoarea cerere
+  // 1. Cart
+  cartState.cart = [];
+  // 2. Patient fields
+  cartState.prenume = "";
+  cartState.nume = "";
+  cartState.cnp = "";
+  cartState.email = "";
+  cartState.telefonPrefix = "+40";
+  cartState.telefonNumar = "";
+  cartState.prenumeValid = false;
+  cartState.numeValid = false;
+  cartState.cnpValid = false;
+  cartState.pacientValid = false;
+  // 3. Clear DOM inputs
+  prenumeInput.value = "";
+  numeInput.value = "";
+  cnpInput.value = "";
+  emailInput.value = "";
+  telefonNumarInput.value = "";
+  telefonPrefixSelect.value = "+40";
+  // 4. Remove valid/invalid classes
+  prenumeInput.classList.remove("valid", "invalid");
+  numeInput.classList.remove("valid", "invalid");
+  cnpInput.classList.remove("valid", "invalid");
+  emailInput.classList.remove("valid", "invalid");
+  cnpStatus.classList.remove("valid", "invalid");
+  cnpStatus.textContent = "";
+  cnpError.textContent = "";
+  // 5. Search input
+  cartSearchInput.value = "";
+  cartSuggestionsEl.classList.remove("visible");
+  cartEmptyHintEl.style.display = "block";
+  // 6. Update UI
+  updatePacientValidation();
+  renderCart();
+  // 7. Focus first field
+  prenumeInput.focus();
 }
 
 function exportReportXlsx(r) {
