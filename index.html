@@ -42,18 +42,53 @@
   <main class="cart-main">
     <section class="cart-pane-left">
       <div class="pane-label">Pasul 1</div>
-      <h2 class="pane-title">Cauta si adauga</h2>
-      <p class="pane-sub">Introdu CNP-ul pacientului, apoi cauta analizele. Alegem automat cea mai ieftina varianta din cele 6 laboratoare.</p>
+      <h2 class="pane-title">Date pacient</h2>
+      <p class="pane-sub">Completeaza datele pacientului, apoi cauta analizele. Alegem automat cea mai ieftina varianta din cele 6 laboratoare.</p>
 
-      <div class="cnp-area">
-        <label class="cnp-label" for="cnpInput">
-          CNP pacient <span class="required">*obligatoriu</span>
-        </label>
-        <div class="cnp-wrap">
-          <input type="text" class="cnp-box" id="cnpInput" placeholder="1234567890123" autocomplete="off" spellcheck="false" inputmode="numeric" maxlength="13">
-          <span class="cnp-status" id="cnpStatus"></span>
+      <div class="pacient-area">
+        <div class="pacient-row">
+          <div class="pacient-field">
+            <label class="pacient-label" for="pacientPrenume">
+              Prenume <span class="required">*</span>
+            </label>
+            <input type="text" class="pacient-input" id="pacientPrenume" placeholder="ex: Ion" autocomplete="given-name" spellcheck="false">
+          </div>
+          <div class="pacient-field">
+            <label class="pacient-label" for="pacientNume">
+              Nume <span class="required">*</span>
+            </label>
+            <input type="text" class="pacient-input" id="pacientNume" placeholder="ex: Popescu" autocomplete="family-name" spellcheck="false">
+          </div>
         </div>
-        <div class="cnp-error" id="cnpError"></div>
+
+        <div class="pacient-field">
+          <label class="pacient-label" for="cnpInput">
+            CNP <span class="required">*</span>
+          </label>
+          <div class="cnp-wrap">
+            <input type="text" class="pacient-input cnp-box" id="cnpInput" placeholder="1234567890123" autocomplete="off" spellcheck="false" inputmode="numeric" maxlength="13">
+            <span class="cnp-status" id="cnpStatus"></span>
+          </div>
+          <div class="cnp-error" id="cnpError"></div>
+        </div>
+
+        <div class="pacient-row">
+          <div class="pacient-field">
+            <label class="pacient-label" for="pacientEmail">
+              Email <span class="optional">optional</span>
+            </label>
+            <input type="email" class="pacient-input" id="pacientEmail" placeholder="ex: ion@email.ro" autocomplete="email" spellcheck="false">
+          </div>
+          <div class="pacient-field">
+            <label class="pacient-label" for="pacientTelefon">
+              Telefon <span class="optional">optional</span>
+            </label>
+            <div class="telefon-wrap">
+              <select class="telefon-prefix" id="pacientTelefonPrefix" aria-label="Prefix tara"></select>
+              <input type="tel" class="pacient-input telefon-numar" id="pacientTelefonNumar" placeholder="712 345 678" autocomplete="tel-national" spellcheck="false" inputmode="tel">
+            </div>
+          </div>
+        </div>
 
         <button type="button" class="scan-btn" id="btnScan">
           <span class="scan-icon">&#128247;</span>
@@ -63,7 +98,7 @@
 
       <div class="search-area">
         <span class="search-icon">&#9906;</span>
-        <input type="text" class="search-box" id="cartSearchInput" placeholder="Introdu CNP-ul mai intai..." autocomplete="off" spellcheck="false" disabled>
+        <input type="text" class="search-box" id="cartSearchInput" placeholder="Completeaza datele pacientului mai sus..." autocomplete="off" spellcheck="false" disabled>
         <div class="suggestions" id="cartSuggestions"></div>
       </div>
 
@@ -216,8 +251,8 @@
 
     <div class="istoric-filters">
       <div class="istoric-filter">
-        <label for="istoricSearchCnp">Cauta CNP</label>
-        <input type="text" id="istoricSearchCnp" placeholder="13 cifre" inputmode="numeric" maxlength="13">
+        <label for="istoricSearchCnp">Cauta CNP sau nume</label>
+        <input type="text" id="istoricSearchCnp" placeholder="CNP sau nume pacient" maxlength="50">
       </div>
       <div class="istoric-filter">
         <label for="istoricFilterFrom">De la data</label>
