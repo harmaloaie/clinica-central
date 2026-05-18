@@ -84,7 +84,16 @@
               Telefon <span class="optional">optional</span>
             </label>
             <div class="telefon-wrap">
-              <select class="telefon-prefix" id="pacientTelefonPrefix" aria-label="Prefix tara"></select>
+              <div class="telefon-prefix-wrap" id="pacientTelefonPrefixWrap">
+                <button type="button" class="telefon-prefix-trigger" id="pacientTelefonPrefixTrigger" aria-haspopup="listbox" aria-expanded="false">
+                  <span class="telefon-prefix-current" id="pacientTelefonPrefixCurrent">+40</span>
+                  <span class="telefon-prefix-caret">&#9662;</span>
+                </button>
+                <div class="telefon-prefix-dropdown" id="pacientTelefonPrefixDropdown" role="listbox" aria-label="Selecteaza tara">
+                  <input type="text" class="telefon-prefix-search" id="pacientTelefonPrefixSearch" placeholder="Cauta tara sau prefix..." autocomplete="off" spellcheck="false">
+                  <div class="telefon-prefix-list" id="pacientTelefonPrefixList"></div>
+                </div>
+              </div>
               <input type="tel" class="pacient-input telefon-numar" id="pacientTelefonNumar" placeholder="712 345 678" autocomplete="tel-national" spellcheck="false" inputmode="tel">
             </div>
           </div>
