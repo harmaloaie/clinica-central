@@ -2301,8 +2301,8 @@ footer strong { color: var(--gold); }
 
 /* Simple native <select> for phone prefix */
 .telefon-prefix {
-  flex: 0 0 110px;
-  max-width: 110px;
+  flex: 0 0 165px;
+  max-width: 165px;
   padding: 11px 10px;
   background: white;
   border: 1.5px solid rgba(15,17,23,0.15);
@@ -2318,6 +2318,9 @@ footer strong { color: var(--gold); }
   background-repeat: no-repeat;
   background-position: right 10px center;
   padding-right: 28px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .telefon-prefix:focus {
   border-color: var(--gold);
