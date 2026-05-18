@@ -209,12 +209,7 @@ var cnpError = document.getElementById("cnpError");
 var prenumeInput = document.getElementById("pacientPrenume");
 var numeInput = document.getElementById("pacientNume");
 var emailInput = document.getElementById("pacientEmail");
-var telefonPrefixTrigger = document.getElementById("pacientTelefonPrefixTrigger");
-var telefonPrefixCurrent = document.getElementById("pacientTelefonPrefixCurrent");
-var telefonPrefixDropdown = document.getElementById("pacientTelefonPrefixDropdown");
-var telefonPrefixSearch = document.getElementById("pacientTelefonPrefixSearch");
-var telefonPrefixList = document.getElementById("pacientTelefonPrefixList");
-var telefonPrefixWrap = document.getElementById("pacientTelefonPrefixWrap");
+var telefonPrefixSelect = document.getElementById("pacientTelefonPrefix");
 var telefonNumarInput = document.getElementById("pacientTelefonNumar");
 var cartSearchInput = document.getElementById("cartSearchInput");
 var cartSuggestionsEl = document.getElementById("cartSuggestions");
@@ -421,65 +416,18 @@ var TELEFON_PREFIXES = [
   { code: "ZW", prefix: "+263", name: "Zimbabwe" }
 ];
 
-// Normalize string for search (lowercase, remove diacritics)
-function normSearch(s) {
-  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-
-function renderTelefonPrefixList(filter) {
-  var q = normSearch(filter || "");
-  var items = TELEFON_PREFIXES.filter(function(t) {
-    if (!q) return true;
-    return normSearch(t.name).indexOf(q) !== -1 || t.prefix.indexOf(q) !== -1;
-  });
-  if (items.length === 0) {
-    telefonPrefixList.innerHTML = '<div class="telefon-prefix-empty">Nicio tara gasita</div>';
-    return;
-  }
+// Populate native <select> with one <option> per country
+function populateTelefonPrefixes() {
   var html = "";
-  for (var i = 0; i < items.length; i++) {
-    var t = items[i];
-    var active = (t.prefix === cartState.telefonPrefix && t.code === cartState.telefonCode);
-    html += '<button type="button" class="telefon-prefix-item' + (active ? ' active' : '') + '"';
-    html += ' data-prefix="' + esc(t.prefix) + '" data-code="' + esc(t.code) + '" role="option">';
-    html += '<span class="telefon-prefix-flag">' + esc(t.prefix) + '</span>';
-    html += '<span class="telefon-prefix-name">' + esc(t.name) + '</span>';
-    html += '</button>';
+  for (var i = 0; i < TELEFON_PREFIXES.length; i++) {
+    var t = TELEFON_PREFIXES[i];
+    html += '<option value="' + esc(t.prefix) + '"' +
+      (t.prefix === "+40" ? ' selected' : '') + '>' +
+      esc(t.prefix) + ' ' + esc(t.name) + '</option>';
   }
-  telefonPrefixList.innerHTML = html;
-
-  // Wire up clicks
-  var btns = telefonPrefixList.querySelectorAll(".telefon-prefix-item");
-  for (var j = 0; j < btns.length; j++) {
-    (function(btn) {
-      btn.addEventListener("click", function() {
-        var prefix = btn.getAttribute("data-prefix");
-        var code = btn.getAttribute("data-code");
-        cartState.telefonPrefix = prefix;
-        cartState.telefonCode = code;
-        telefonPrefixCurrent.textContent = prefix;
-        closeTelefonPrefixDropdown();
-        telefonNumarInput.focus();
-      });
-    })(btns[j]);
-  }
+  telefonPrefixSelect.innerHTML = html;
 }
-
-function openTelefonPrefixDropdown() {
-  telefonPrefixDropdown.classList.add("visible");
-  telefonPrefixTrigger.setAttribute("aria-expanded", "true");
-  renderTelefonPrefixList("");
-  telefonPrefixSearch.value = "";
-  setTimeout(function() { telefonPrefixSearch.focus(); }, 50);
-}
-function closeTelefonPrefixDropdown() {
-  telefonPrefixDropdown.classList.remove("visible");
-  telefonPrefixTrigger.setAttribute("aria-expanded", "false");
-}
-
-// Initialize: set default Romania
-cartState.telefonCode = "RO";
-telefonPrefixCurrent.textContent = "+40";
+populateTelefonPrefixes();
 
 // ─── Validation helpers ───
 function isCnpValid(s) { return /^\d{13}$/.test(s); }
@@ -574,28 +522,9 @@ emailInput.addEventListener("input", function() {
   updatePacientValidation();
 });
 
-// Trigger button opens/closes dropdown
-telefonPrefixTrigger.addEventListener("click", function(e) {
-  e.stopPropagation();
-  if (telefonPrefixDropdown.classList.contains("visible")) {
-    closeTelefonPrefixDropdown();
-  } else {
-    openTelefonPrefixDropdown();
-  }
-});
-// Search input filters list
-telefonPrefixSearch.addEventListener("input", function(e) {
-  renderTelefonPrefixList(e.target.value);
-});
-// ESC closes dropdown
-telefonPrefixSearch.addEventListener("keydown", function(e) {
-  if (e.key === "Escape") closeTelefonPrefixDropdown();
-});
-// Click outside closes dropdown
-document.addEventListener("click", function(e) {
-  if (!telefonPrefixWrap.contains(e.target)) {
-    closeTelefonPrefixDropdown();
-  }
+// Simple native select change
+telefonPrefixSelect.addEventListener("change", function() {
+  cartState.telefonPrefix = telefonPrefixSelect.value;
 });
 telefonNumarInput.addEventListener("input", function() {
   // Strip everything except digits and spaces
